@@ -13,11 +13,9 @@ mod test;
 use std::error::Error;
 
 use author::get_author_list;
-use clap::Parser;
 use config::Config;
-use log::{debug, info, log_enabled};
-use post::{get_post, get_post_list, get_post_list_by_id, get_posts, Post};
-use reqwest::{Client, Url};
+use log::info;
+use post::{get_post_list, get_posts};
 use resolve::{build, resolve};
 
 #[tokio::main]
@@ -64,12 +62,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let posts = unit!("Get Posts", get_posts(posts, &config).await?);
 
-    let (authors, posts, files) = unit!("Resolve", resolve(authors, posts, &config));
+    let (authors, posts, files) = unit!("Resolve", resolve(authors, posts));
 
-    unit!(
-        "Build",
-        build(authors, posts, files, &config).await?
-    );
+    unit!("Build", build(authors, posts, files, &config).await?);
 
     Ok(())
 }

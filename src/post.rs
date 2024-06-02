@@ -1,10 +1,14 @@
 use std::{
-    any::Any, borrow::Borrow, collections::{BTreeMap, HashMap}, error::Error, fmt::format, fs::File, io::{BufReader, Read}, mem, path::PathBuf, str::FromStr, sync::Arc
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    mem,
+    path::PathBuf,
+    sync::Arc,
 };
 
 use chrono::{DateTime, Local};
 use log::info;
-use mime_guess::{Mime, MimeGuess};
+use mime_guess::MimeGuess;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
@@ -324,7 +328,7 @@ impl PostBody {
         videos.iter().map(|video| Self::map_video(video)).collect()
     }
 
-    pub fn content(&self,path: PathBuf) -> Vec<ArchiveContent> {
+    pub fn content(&self, path: PathBuf) -> Vec<ArchiveContent> {
         let mut content = vec![];
         content.extend(self.text());
 
@@ -352,57 +356,64 @@ impl PostBody {
         let blocks = self.blocks.clone().unwrap_or_default();
         for block in blocks {
             body.push(match block {
-                PostBlock::P { text, styles } => ArchiveContent::Text(set_style(text, styles.unwrap_or_default())),
-                PostBlock::Header { text, styles } => {
-                    ArchiveContent::Text(format!("# {}", set_style(text, styles.unwrap_or_default())))
+                PostBlock::P { text, styles } => {
+                    ArchiveContent::Text(set_style(text, styles.unwrap_or_default()))
                 }
+                PostBlock::Header { text, styles } => ArchiveContent::Text(format!(
+                    "# {}",
+                    set_style(text, styles.unwrap_or_default())
+                )),
                 PostBlock::Image { image_id } => {
                     let image = self.image_map.as_ref().unwrap().get(&image_id).unwrap();
                     let url = format!("{}.{}", image.id, image.extension);
                     ArchiveContent::Image(url)
-                },
+                }
                 PostBlock::File { file_id } => {
                     let file = self.file_map.as_ref().unwrap().get(&file_id).unwrap();
                     ArchiveContent::File(file.filename())
-                },
+                }
                 PostBlock::Embed { embed_id } => {
                     let embed = self.embed_map.as_ref().unwrap().get(&embed_id).unwrap();
                     ArchiveContent::Text(Self::map_embed(embed))
-                },
+                }
                 PostBlock::Video { video_id } => {
-                    let video = self.videos.as_ref().unwrap().iter().find(|v| v.video_id == video_id).unwrap();
+                    let video = self
+                        .videos
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .find(|v| v.video_id == video_id)
+                        .unwrap();
                     ArchiveContent::Text(Self::map_video(video))
-                },
-                PostBlock::UrlEmbed { url_embed_id } => todo!(),
+                }
+                PostBlock::UrlEmbed { url_embed_id: _ } => todo!(),
             });
 
             fn set_style(mut text: String, mut styles: Vec<PostBlockStyle>) -> String {
                 while let Some(style) = styles.pop() {
                     let offset = style.offset as usize;
                     let length = style.length as usize;
-                    let chars: Vec<char> = text.chars().collect();
-                    let [left, styled, right]: [String;3] = {
-
+                    let [left, styled, right]: [String; 3] = {
                         let mut left = String::new();
                         let mut styled = String::new();
                         let mut right = String::new();
-                        for (index,char) in text.char_indices() {
+                        for (index, char) in text.char_indices() {
                             if index < offset {
                                 left.push(char);
-                            } else if index < offset+length {
+                            } else if index < offset + length {
                                 styled.push(char);
                             } else {
                                 right.push(char);
                             }
                         }
-                        [left,styled,right]
+                        [left, styled, right]
                     };
                     let styled: String = match style.ty.as_str() {
                         "bold" => format!("**{}**", styled),
                         _ => {
                             println!("Unknown style: {:?}", style);
                             panic!();
-                        },
+                        }
                     };
                     text = format!("{}{}{}", left, styled, right);
                 }
@@ -506,7 +517,7 @@ impl Into<PostFile> for PostImage {
         PostFile {
             size: 0,
             id: self.id(),
-            name: format!("{}.{}",self.id,self.extension),
+            name: format!("{}.{}", self.id, self.extension),
             url: self.url(),
             extension: self.extension,
         }

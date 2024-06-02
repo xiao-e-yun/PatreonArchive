@@ -1,22 +1,23 @@
 use clap::{arg, Parser, ValueEnum};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
+use dotenv::dotenv;
 use env_logger::TimestampPrecision;
-use indicatif_log_bridge::LogWrapper;
 use indicatif::MultiProgress;
+use indicatif_log_bridge::LogWrapper;
 use log::info;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use dotenv::dotenv;
 use std::{
     fmt::{self, Display},
     fs::File,
     io::{BufReader, Write},
-    path::PathBuf, sync::{Arc, Mutex},
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
 
 #[derive(Debug, Clone, Parser, Default)]
 pub struct Config {
     /// Your `FANBOXSESSID` cookie
-    #[clap(env="FANBOXSESSID")]
+    #[clap(env = "FANBOXSESSID")]
     session: String,
     /// Which you path want to save
     #[arg(short, long, default_value = "./fanbox")]
@@ -44,19 +45,22 @@ pub struct Config {
 impl Config {
     pub fn parse() -> Self {
         dotenv().ok();
-        let config =  <Self as Parser>::parse();
+        let config = <Self as Parser>::parse();
 
         let info_level = config.verbose.log_level().unwrap() > log::Level::Info;
         let logger = env_logger::Builder::new()
-          .format_timestamp(if info_level { None } else { Some(TimestampPrecision::Millis) }) 
-          .format_target(info_level)
-          .filter_level(config.verbose.log_level_filter()).build();
+            .format_timestamp(if info_level {
+                None
+            } else {
+                Some(TimestampPrecision::Millis)
+            })
+            .format_target(info_level)
+            .filter_level(config.verbose.log_level_filter())
+            .build();
 
         let multi = MultiProgress::new();
 
-        LogWrapper::new(multi.clone(), logger)
-        .try_init()
-        .unwrap();
+        LogWrapper::new(multi.clone(), logger).try_init().unwrap();
 
         config
     }
@@ -134,21 +138,21 @@ impl Display for SaveType {
 }
 
 #[derive(Debug, Default)]
-struct CacheCleanup(Mutex<Vec<(PathBuf,Vec<u8>)>>);
+struct CacheCleanup(Mutex<Vec<(PathBuf, Vec<u8>)>>);
 
 impl CacheCleanup {
-  pub fn push(&self, path: PathBuf, data: Vec<u8>) {
-    self.0.lock().unwrap().push((path, data));
-  }
+    pub fn push(&self, path: PathBuf, data: Vec<u8>) {
+        self.0.lock().unwrap().push((path, data));
+    }
 }
 
 impl Drop for CacheCleanup {
-  fn drop(&mut self) {
-    let data = self.0.lock().unwrap();
-    for (path, data) in data.iter() {
-      info!("Saving cache {:?}", &path);
-      let mut file = File::create(path).unwrap();
-      file.write_all(data).unwrap();
+    fn drop(&mut self) {
+        let data = self.0.lock().unwrap();
+        for (path, data) in data.iter() {
+            info!("Saving cache {:?}", &path);
+            let mut file = File::create(path).unwrap();
+            file.write_all(data).unwrap();
+        }
     }
-  }
 }

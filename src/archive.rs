@@ -2,9 +2,6 @@ use std::{collections::HashSet, path::PathBuf};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use url::Url;
-
-type AuthorsJson = ArchiveAuthorsList;
 
 //==============================================================================
 // List

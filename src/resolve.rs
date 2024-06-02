@@ -1,23 +1,18 @@
 use std::{
-    cell::{Cell, RefCell},
     collections::HashMap,
     error::Error,
-    fmt::Debug,
     fs::File,
-    hash::Hash,
     io::{BufReader, Write},
     path::PathBuf,
-    rc::Rc,
     sync::Arc,
     time::Duration,
 };
 
-use chrono::{DateTime, Local};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::{info, log_enabled};
+use indicatif::{ProgressBar, ProgressStyle};
+use log::log_enabled;
 use reqwest::Client;
 use tokio::{
-    fs::{self, create_dir},
+    fs::{self},
     sync::Semaphore,
     task::JoinSet,
     time::sleep,
@@ -25,20 +20,16 @@ use tokio::{
 use url::Url;
 
 use crate::{
-    archive::{
-        ArchiveAuthor, ArchiveAuthorsItem, ArchiveAuthorsList, ArchiveByType, ArchiveComment,
-        ArchiveContent, ArchiveFile, ArchivePost,
-    },
+    archive::{ArchiveAuthor, ArchiveAuthorsList, ArchiveByType, ArchiveFile, ArchivePost},
     author::Author,
     config::Config,
-    post::{Post, PostBlock, PostBody, PostFile, PostImage},
-    unit, unit_short,
+    post::Post,
+    unit_short,
 };
 
 pub fn resolve(
     authors: Vec<Author>,
     posts: Vec<Post>,
-    config: &Config,
 ) -> (Vec<ArchiveAuthor>, Vec<ArchivePost>, Vec<(Url, PathBuf)>) {
     let mut download_files: Vec<(Url, PathBuf)> = Vec::new();
     let mut map_author: HashMap<String, (Option<ArchiveFile>, Vec<String>)> = HashMap::new();
