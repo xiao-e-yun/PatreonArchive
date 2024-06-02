@@ -50,9 +50,9 @@ impl Config {
         let debug = config.verbose.log_level().unwrap() > log::Level::Info;
         let logger = env_logger::Builder::new()
             .format_timestamp(if debug {
-              Some(TimestampPrecision::Millis)
+                Some(TimestampPrecision::Millis)
             } else {
-              None
+                None
             })
             .format_target(debug)
             .filter_level(config.verbose.log_level_filter())

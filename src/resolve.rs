@@ -33,7 +33,8 @@ pub fn resolve(
     posts: Vec<Post>,
 ) -> (Vec<ArchiveAuthor>, Vec<ArchivePost>, Vec<(Url, PathBuf)>) {
     let mut download_files: Vec<(Url, PathBuf)> = Vec::new();
-    let mut map_author: HashMap<String, ((DateTime<Local>,Option<ArchiveFile>), Vec<String>)> = HashMap::new();
+    let mut map_author: HashMap<String, ((DateTime<Local>, Option<ArchiveFile>), Vec<String>)> =
+        HashMap::new();
 
     let archive_posts = unit_short!("Resolving Posts", {
         let mut archive_posts = Vec::new();
@@ -81,7 +82,8 @@ pub fn resolve(
 
             let content = body.content(out_path);
 
-            let ((thumb_published,author_thumb), author_post_list) = map_author.entry(author.clone()).or_default();
+            let ((thumb_published, author_thumb), author_post_list) =
+                map_author.entry(author.clone()).or_default();
             if published > *thumb_published && thumb.is_some() {
                 *thumb_published = published.clone();
                 *author_thumb = thumb.clone();
@@ -110,7 +112,10 @@ pub fn resolve(
             let id = author.id().to_string();
             let name = author.name();
 
-            let ((_,thumb), mut posts) = map_author.get(&id).unwrap_or(&(Default::default(), vec![])).clone();
+            let ((_, thumb), mut posts) = map_author
+                .get(&id)
+                .unwrap_or(&(Default::default(), vec![]))
+                .clone();
             posts.sort();
             posts.reverse();
 
