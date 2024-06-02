@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use chrono::{DateTime, Local};
 use indicatif::{ProgressBar, ProgressStyle};
 use log::log_enabled;
 use reqwest::Client;
@@ -32,7 +33,7 @@ pub fn resolve(
     posts: Vec<Post>,
 ) -> (Vec<ArchiveAuthor>, Vec<ArchivePost>, Vec<(Url, PathBuf)>) {
     let mut download_files: Vec<(Url, PathBuf)> = Vec::new();
-    let mut map_author: HashMap<String, (Option<ArchiveFile>, Vec<String>)> = HashMap::new();
+    let mut map_author: HashMap<String, ((DateTime<Local>,Option<ArchiveFile>), Vec<String>)> = HashMap::new();
 
     let archive_posts = unit_short!("Resolving Posts", {
         let mut archive_posts = Vec::new();
@@ -80,8 +81,11 @@ pub fn resolve(
 
             let content = body.content(out_path);
 
-            let (author_thumb, author_post_list) = map_author.entry(author.clone()).or_default();
-            *author_thumb = author_thumb.clone().or(thumb.clone());
+            let ((thumb_published,author_thumb), author_post_list) = map_author.entry(author.clone()).or_default();
+            if published > *thumb_published && thumb.is_some() {
+                *thumb_published = published.clone();
+                *author_thumb = thumb.clone();
+            }
             author_post_list.push(id.clone());
 
             archive_posts.push(ArchivePost {
@@ -106,7 +110,9 @@ pub fn resolve(
             let id = author.id().to_string();
             let name = author.name();
 
-            let (thumb, posts) = map_author.get(&id).unwrap_or(&(None, vec![])).clone();
+            let ((_,thumb), mut posts) = map_author.get(&id).unwrap_or(&(Default::default(), vec![])).clone();
+            posts.sort();
+            posts.reverse();
 
             archive_authors.push(ArchiveAuthor {
                 id,
