@@ -47,14 +47,14 @@ impl Config {
         dotenv().ok();
         let config = <Self as Parser>::parse();
 
-        let info_level = config.verbose.log_level().unwrap() > log::Level::Info;
+        let debug = config.verbose.log_level().unwrap() > log::Level::Info;
         let logger = env_logger::Builder::new()
-            .format_timestamp(if info_level {
-                None
+            .format_timestamp(if debug {
+              Some(TimestampPrecision::Millis)
             } else {
-                Some(TimestampPrecision::Millis)
+              None
             })
-            .format_target(info_level)
+            .format_target(debug)
             .filter_level(config.verbose.log_level_filter())
             .build();
 
