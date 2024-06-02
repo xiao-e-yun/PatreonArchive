@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, hash::Hash, path::PathBuf};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ impl ArchiveAuthorsList {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveAuthorsItem {
     pub id: String,
     pub name: String,
@@ -40,6 +40,12 @@ impl ArchiveAuthorsItem {
         self.name = rhs.name;
         self.r#type = rhs.r#type;
         self.thumb = rhs.thumb.or(self.thumb.clone());
+    }
+}
+
+impl Hash for ArchiveAuthorsItem {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 
