@@ -31,6 +31,12 @@ pub struct Config {
     /// Overwrite existing files
     #[arg(short, long, name = "no-cache")]
     no_cache: bool,
+    /// Whitelist of creator IDs
+    #[arg(short, long, num_args = 0..)]
+    whitelist: Vec<String>,
+    /// Blacklist of creator IDs
+    #[arg(short, long, num_args = 0..)]
+    blacklist: Vec<String>,
     /// Limit download concurrency
     #[arg(short, long, default_value = "5")]
     limit: usize,
@@ -111,6 +117,18 @@ impl Config {
     }
     pub fn limit(&self) -> usize {
         self.limit
+    }
+
+    pub fn filter_creator(&self, creator_id: &str) -> bool {
+        if !self.whitelist.is_empty() {
+            return !self.whitelist.contains(&creator_id.to_string());
+        }
+
+        if !self.blacklist.is_empty() {
+            return !self.blacklist.contains(&creator_id.to_string());
+        }
+
+        true
     }
 }
 

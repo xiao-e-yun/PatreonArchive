@@ -36,6 +36,10 @@ pub async fn get_author_list(config: &Config) -> Result<Vec<Author>, Box<dyn Err
     while let Some(res) = awaits.join_next().await {
         let (has_fee, result) = res??;
         for author in result {
+            if !config.filter_creator(&author.creator_id) {
+                continue;
+            }
+            
             if !has_fee && saved.contains_key(&author.creator_id) {
                 continue;
             }
