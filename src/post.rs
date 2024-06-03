@@ -268,8 +268,10 @@ impl PostBody {
 
     pub fn text(&self) -> Vec<ArchiveContent> {
         let mut body = vec![];
-        if let Some(text) = self.text.clone() {
-            body.push(ArchiveContent::Text(text));
+        if let Some(text) = self.text.clone()  {
+            if !text.is_empty() {
+                body.push(ArchiveContent::Text(text));
+            }
         }
 
         let blocks = self.blocks.clone().unwrap_or_default();
