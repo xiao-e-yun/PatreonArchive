@@ -10,7 +10,7 @@ use std::{
 
 use chrono::{DateTime, Local};
 use indicatif::{ProgressBar, ProgressStyle};
-use log::log_enabled;
+use log::{info, log_enabled};
 use reqwest::Client;
 use tokio::{
     fs::{self},
@@ -155,11 +155,13 @@ pub async fn build(
                 archive_authors = old_authors;
             }
 
+            info!("Writing authors.json");
             let mut file = File::create(&path).unwrap();
             file.write_all(serde_json::to_vec(&archive_authors)?.as_slice())
                 .unwrap();
         }
 
+        info!("Writing `/[author]/author.json` (total: {})", authors.len());
         for mut author in authors.into_iter() {
             let output = output.join(&author.id);
             if !output.exists() {
@@ -178,6 +180,7 @@ pub async fn build(
                 .unwrap();
         }
 
+        info!("Writing `/[author]/[post]/post.json` (total: {})", posts.len());
         for post in posts.into_iter() {
             let output = output.join(&post.author).join(&post.id);
             if !output.exists() {
@@ -210,6 +213,7 @@ pub async fn build(
             }
         }
         let pg = if log_enabled!(log::Level::Info) {
+            info!("Downloading {} files", i);
             Some(
                 config.multi.add(ProgressBar::new(i)).with_style(
                     ProgressStyle::with_template(
