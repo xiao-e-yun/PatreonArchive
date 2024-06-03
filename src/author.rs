@@ -7,9 +7,9 @@ use tokio::task::JoinSet;
 use url::Url;
 
 use crate::{
-    api::APIResponse,
+    api::{ArchiveClient, FanboxClient},
     config::{Config, SaveType},
-    utils::{PostType, RequestInner, User},
+    utils::{PostType, User},
 };
 
 pub async fn get_author_list(config: &Config) -> Result<Vec<Author>, Box<dyn Error>> {
@@ -18,28 +18,30 @@ pub async fn get_author_list(config: &Config) -> Result<Vec<Author>, Box<dyn Err
         save_types == &SaveType::All || save_types == &ty
     }
 
+    let client = FanboxClient::new(config.clone());
+
     let mut saved = HashMap::new();
     let mut awaits = JoinSet::new();
 
     if check(&save_types, SaveType::Following) {
-        let following = get_following_authors(config.clone());
+        let following = get_following_authors(client.clone());
         info!("Checking following authors");
         awaits.spawn(following);
     }
 
     if check(&save_types, SaveType::Supporting) {
-        let supporting = get_supporting_authors(config.clone());
+        let supporting = get_supporting_authors(client.clone());
         info!("Checking supporting authors");
         awaits.spawn(supporting);
     }
 
     while let Some(res) = awaits.join_next().await {
-        let (has_fee, result) = res??;
+        let (has_fee, result) = res?;
         for author in result {
             if !config.filter_creator(&author.creator_id) {
                 continue;
             }
-            
+
             if !has_fee && saved.contains_key(&author.creator_id) {
                 continue;
             }
@@ -50,52 +52,14 @@ pub async fn get_author_list(config: &Config) -> Result<Vec<Author>, Box<dyn Err
     Ok(saved.into_iter().map(|(_, v)| v).collect())
 }
 
-pub async fn get_following_authors(config: Config) -> Result<(bool, Vec<Author>), String> {
-    let url = Url::parse("https://api.fanbox.cc/creator.listFollowing").unwrap();
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
-        .header("Origin", "https://www.fanbox.cc")
-        .header("Cookie", config.session())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    match response {
-        APIResponse::ListFollowing(RequestInner { body }) => {
-            Ok((false, body.into_iter().map(|f| f.into()).collect()))
-        }
-        APIResponse::Error { error } => Err(format!("{} (tips: check your session)", error).into()),
-        _ => unreachable!(),
-    }
+pub async fn get_following_authors(client: FanboxClient) -> (bool, Vec<Author>) {
+    let response = client.get_following_authors().await;
+    (false, response.into_iter().map(|f| f.into()).collect())
 }
 
-pub async fn get_supporting_authors(config: Config) -> Result<(bool, Vec<Author>), String> {
-    let url = Url::parse("https://api.fanbox.cc/plan.listSupporting").unwrap();
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
-        .header("Origin", "https://www.fanbox.cc")
-        .header("Cookie", config.session())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    match response {
-        APIResponse::ListSupporting(RequestInner { body }) => {
-            Ok((true, body.into_iter().map(|f| f.into()).collect()))
-        }
-        APIResponse::Error { error } => Err(format!("{} (tips: check your session)", error)),
-        _ => unreachable!(),
-    }
+pub async fn get_supporting_authors(client: FanboxClient) -> (bool, Vec<Author>) {
+    let response = client.get_supporting_authors().await;
+    (true, response.into_iter().map(|f| f.into()).collect())
 }
 
 //===================================================

@@ -32,8 +32,14 @@ macro_rules! unit_short {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
-pub struct RequestInner<T> {
+pub struct Request<T> {
     pub body: T,
+}
+
+impl<T> Request<T> {
+    pub fn raw(self) -> T {
+        self.body
+    }
 }
 
 #[serde_as]

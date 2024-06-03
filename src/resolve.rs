@@ -180,7 +180,10 @@ pub async fn build(
                 .unwrap();
         }
 
-        info!("Writing `/[author]/[post]/post.json` (total: {})", posts.len());
+        info!(
+            "Writing `/[author]/[post]/post.json` (total: {})",
+            posts.len()
+        );
         for post in posts.into_iter() {
             let output = output.join(&post.author).join(&post.id);
             if !output.exists() {

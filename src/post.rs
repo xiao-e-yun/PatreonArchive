@@ -9,55 +9,51 @@ use std::{
 use chrono::{DateTime, Local};
 use log::info;
 use mime_guess::MimeGuess;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
 
 use crate::{
-    api::APIResponse,
+    api::{ArchiveClient, FanboxClient},
     archive::{ArchiveComment, ArchiveContent},
     author::Author,
     config::Config,
-    utils::{PostType, RequestInner, User},
+    utils::{PostType, User},
 };
 
-type PostListCache = HashMap<u32, DateTime<Local>>;
+pub type PostListCache = HashMap<u32, DateTime<Local>>;
 pub async fn get_post_list(
     authors: Vec<Author>,
     config: &Config,
 ) -> Result<Vec<u32>, Box<dyn Error>> {
     const CACHE_FILE: &'static str = "postList.json";
 
+    let client = FanboxClient::new(config.clone());
+
     let mut result = Vec::new();
     let mut awaits = tokio::task::JoinSet::new();
 
-    let cache: PostListCache = config.load_cache(&CACHE_FILE).unwrap_or_default();
+    let cache: Option<Arc<PostListCache>> = config.load_cache(&CACHE_FILE).map(|c| Arc::new(c));
 
-    let mut cache = {
+    let cache = {
         info!("Checking posts");
-        let client = Client::new();
-        let cache = Arc::new(cache);
-        for author in authors {
-            awaits.spawn(get_post_list_by_id(
-                author.id().to_string(),
-                author.fee(),
-                cache.clone(),
-                client.clone(),
-                config.clone(),
-            ));
+        for author in authors.into_iter() {
+            let client = client.clone();
+            let cache = cache.clone();
+            awaits.spawn(async move { client.get_post_list(author, cache).await });
         }
         cache
     };
 
     let mut temp_cache = HashMap::new();
     while let Some(res) = awaits.join_next().await {
-        let (list, cache) = res??;
+        let (list, cache) = res?;
         temp_cache.extend(cache);
         result.extend(list);
     }
 
     {
+        let mut cache = cache.unwrap_or_default();
         let cache = Arc::get_mut(&mut cache).unwrap();
         cache.extend(temp_cache);
 
@@ -65,62 +61,6 @@ pub async fn get_post_list(
     }
 
     Ok(result)
-}
-
-pub async fn get_post_list_by_id(
-    creator_id: String,
-    max_fee: u32,
-    cache: Arc<PostListCache>,
-    client: Client,
-    config: Config,
-) -> Result<(Vec<u32>, PostListCache), String> {
-    let mut next_url = Some(
-        Url::parse(&format!(
-            "https://api.fanbox.cc/post.listCreator?creatorId={}&limit=300",
-            creator_id
-        ))
-        .unwrap(),
-    );
-
-    let mut result = Vec::new();
-    let mut updated_cache = HashMap::new();
-    while let Some(url) = &next_url {
-        let response: APIResponse = client
-            .get(url.clone())
-            .header("Origin", "https://www.fanbox.cc")
-            .header("Cookie", config.session())
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        match response {
-            APIResponse::ListCreator(RequestInner { body }) => {
-                next_url = body.next_url.clone();
-                result.extend(body.items.into_iter().filter_map(|f| {
-                    if f.fee_required > max_fee {
-                        return None;
-                    }
-
-                    let last_updated = cache.get(&f.id).cloned().unwrap_or_default();
-                    if f.updated_datetime == last_updated {
-                        return None;
-                    }
-
-                    if config.cache().is_some() {
-                        updated_cache.insert(f.id, f.updated_datetime);
-                    }
-                    Some(f.id)
-                }));
-            }
-            APIResponse::Error { error } => Err(format!("{} (tips: check your session)", error))?,
-            _ => unreachable!(),
-        }
-    }
-
-    Ok((result, updated_cache))
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
@@ -135,21 +75,21 @@ pub struct PostList {
 #[serde(rename_all = "camelCase")]
 pub struct PostListItem {
     #[serde_as(as = "DisplayFromStr")]
-    id: u32,
-    title: String,
-    fee_required: u32,
-    published_datetime: DateTime<Local>,
-    updated_datetime: DateTime<Local>,
-    tags: Vec<String>,
-    is_liked: bool,
-    like_count: u32,
-    comment_count: u32,
-    is_restricted: bool,
-    user: User,
-    creator_id: String,
-    has_adult_content: bool,
-    cover: Option<Cover>,
-    excerpt: String,
+    pub id: u32,
+    pub title: String,
+    pub fee_required: u32,
+    pub published_datetime: DateTime<Local>,
+    pub updated_datetime: DateTime<Local>,
+    pub tags: Vec<String>,
+    pub is_liked: bool,
+    pub like_count: u32,
+    pub comment_count: u32,
+    pub is_restricted: bool,
+    pub user: User,
+    pub creator_id: String,
+    pub has_adult_content: bool,
+    pub cover: Option<Cover>,
+    pub excerpt: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
@@ -170,40 +110,17 @@ pub async fn get_posts(posts: Vec<u32>, config: &Config) -> Result<Vec<Post>, Bo
     serde_json::to_string(&posts).unwrap();
 
     info!("Checking posts");
-    let client = Client::new();
+    let client = FanboxClient::new(config.clone());
     for post in posts {
-        awaits.spawn(get_post(post, client.clone(), config.clone()));
+        let client = client.clone();
+        awaits.spawn(async move { client.get_post(post).await });
     }
 
     while let Some(res) = awaits.join_next().await {
-        result.push(res??);
+        result.push(res?);
     }
 
     Ok(result)
-}
-
-pub async fn get_post(id: u32, client: Client, config: Config) -> Result<Post, String> {
-    let url = Url::parse(&format!("https://api.fanbox.cc/post.info?postId={}", id)).unwrap();
-
-    let response = client
-        .get(url)
-        .header("Origin", "https://www.fanbox.cc")
-        .header("Cookie", config.session())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .text()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let response: APIResponse = serde_json::from_str(&response)
-        .expect(&format!("[Parse Error]\nSource:\n{}\nError: ", response));
-
-    match response {
-        APIResponse::Post(RequestInner { body }) => Ok(body),
-        APIResponse::Error { error } => Err(format!("{} (tips: check your session)", error).into()),
-        _ => unreachable!(),
-    }
 }
 
 //===================================================
@@ -391,8 +308,8 @@ impl PostBody {
                     ArchiveContent::Text(Self::map_video(video))
                 }
                 PostBlock::UrlEmbed { url_embed_id } => {
-                    ArchiveContent::Text(format!("> {}",url_embed_id))
-                },
+                    ArchiveContent::Text(format!("> {}", url_embed_id))
+                }
             });
 
             fn set_style(mut text: String, mut styles: Vec<PostBlockStyle>) -> String {
