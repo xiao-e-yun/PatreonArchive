@@ -1,4 +1,4 @@
-use std::{collections::HashSet, hash::Hash, path::PathBuf};
+use std::{collections::{HashMap, HashSet}, hash::Hash, path::PathBuf};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -16,16 +16,27 @@ impl ArchiveAuthorsList {
         ArchiveAuthorsList(vec)
     }
     pub fn extend(&mut self, rhs: Self) {
-        let mut authors = HashSet::new();
-        authors.extend(self.0.iter().cloned());
-        authors.extend(rhs.0.iter().cloned());
-        let mut authors: Vec<ArchiveAuthorsItem> = authors.into_iter().collect();
+        let mut authors_map = HashMap::new();
+
+        for author in self.0.iter().cloned() {
+            authors_map.insert(author.id.clone(), author);
+        }
+
+        for author in rhs.0.iter().cloned() {
+            if let Some(old_author) = authors_map.get_mut(&author.id) {
+                old_author.extend(author);
+            } else {
+                authors_map.insert(author.id.clone(), author);
+            }
+        }
+
+        let mut authors: Vec<ArchiveAuthorsItem> = authors_map.into_values().collect();
         authors.sort_by(|a, b| a.id.cmp(&b.id));
         self.0 = authors;
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ArchiveAuthorsItem {
     pub id: String,
     pub name: String,
@@ -40,12 +51,6 @@ impl ArchiveAuthorsItem {
         self.name = rhs.name;
         self.r#type = rhs.r#type;
         self.thumb = rhs.thumb.or(self.thumb.clone());
-    }
-}
-
-impl Hash for ArchiveAuthorsItem {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
     }
 }
 
@@ -134,7 +139,7 @@ pub struct ArchivePostShort {
 //==============================================================================
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase",tag = "type")]
 pub enum ArchiveFile {
     Image {
         width: u32,
