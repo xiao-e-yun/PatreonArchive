@@ -281,7 +281,7 @@ pub struct PostBody {
     file_map: Option<BTreeMap<String, PostFile>>,
 
     embed_map: Option<BTreeMap<String, PostEmbed>>,
-    url_embed_map: Option<BTreeMap<String, String>>,
+    url_embed_map: Option<BTreeMap<String, PostUrlEmbed>>,
 }
 
 impl PostBody {
@@ -386,8 +386,11 @@ impl PostBody {
                         .unwrap();
                     ArchiveContent::Text(Self::map_video(video))
                 }
-                PostBlock::UrlEmbed { url_embed_id: _ } => todo!(),
+                PostBlock::UrlEmbed { url_embed_id } => {
+                    ArchiveContent::Text(format!("> {}",url_embed_id))
+                },
             });
+            body.push(ArchiveContent::Text("  ".to_string()));
 
             fn set_style(mut text: String, mut styles: Vec<PostBlockStyle>) -> String {
                 while let Some(style) = styles.pop() {
@@ -444,7 +447,7 @@ impl PostBody {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "snake_case", tag = "type")]
 
 pub enum PostBlock {
     P {
@@ -565,6 +568,14 @@ pub struct PostEmbed {
     id: String,
     service_provider: String,
     content_id: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct PostUrlEmbed {
+    id: String,
+    html: String,
+    r#type: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
