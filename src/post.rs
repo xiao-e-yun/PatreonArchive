@@ -357,7 +357,11 @@ impl PostBody {
         for block in blocks {
             body.push(match block {
                 PostBlock::P { text, styles } => {
-                    ArchiveContent::Text(set_style(text, styles.unwrap_or_default()))
+                    if text.is_empty() {
+                        ArchiveContent::Text("  ".to_string())
+                    } else {
+                        ArchiveContent::Text(set_style(text, styles.unwrap_or_default()))
+                    }
                 }
                 PostBlock::Header { text, styles } => ArchiveContent::Text(format!(
                     "# {}",
@@ -390,7 +394,6 @@ impl PostBody {
                     ArchiveContent::Text(format!("> {}",url_embed_id))
                 },
             });
-            body.push(ArchiveContent::Text("  ".to_string()));
 
             fn set_style(mut text: String, mut styles: Vec<PostBlockStyle>) -> String {
                 while let Some(style) = styles.pop() {
