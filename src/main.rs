@@ -3,7 +3,6 @@ pub mod author;
 pub mod config;
 pub mod post;
 
-pub mod archive;
 pub mod resolve;
 pub mod utils;
 

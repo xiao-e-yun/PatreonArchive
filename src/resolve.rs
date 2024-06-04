@@ -11,6 +11,9 @@ use std::{
 use chrono::{DateTime, Local};
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, log_enabled};
+use post_archiver::{
+    ArchiveAuthor, ArchiveAuthorsList, ArchiveByType, ArchiveFile, ArchivePost, ArchivePostShort,
+};
 use reqwest::Client;
 use tokio::{
     fs::{self},
@@ -20,21 +23,17 @@ use tokio::{
 };
 use url::Url;
 
-use crate::{
-    archive::{ArchiveAuthor, ArchiveAuthorsList, ArchiveByType, ArchiveFile, ArchivePost},
-    author::Author,
-    config::Config,
-    post::Post,
-    unit_short,
-};
+use crate::{author::Author, config::Config, post::Post, unit_short};
 
 pub fn resolve(
     authors: Vec<Author>,
     posts: Vec<Post>,
 ) -> (Vec<ArchiveAuthor>, Vec<ArchivePost>, Vec<(Url, PathBuf)>) {
     let mut download_files: Vec<(Url, PathBuf)> = Vec::new();
-    let mut map_author: HashMap<String, ((DateTime<Local>, Option<ArchiveFile>), Vec<String>)> =
-        HashMap::new();
+    let mut map_author: HashMap<
+        String,
+        ((DateTime<Local>, Option<PathBuf>), Vec<ArchivePostShort>),
+    > = HashMap::new();
 
     let archive_posts = unit_short!("Resolving Posts", {
         let mut archive_posts = Vec::new();
@@ -68,13 +67,14 @@ pub fn resolve(
                         path: file_path,
                         filename: image.filename().into(),
                     };
-                    thumb = thumb.clone().or(Some(image.clone()));
+                    thumb = thumb.clone().or(Some(image.path().clone()));
                     image
                 })
                 .collect::<Vec<ArchiveFile>>();
             files.extend(images);
 
             let id = post.id();
+            let title = post.title();
             let author = post.author();
             let updated = post.updated();
             let published = post.published();
@@ -88,10 +88,10 @@ pub fn resolve(
                 *thumb_published = published.clone();
                 *author_thumb = thumb.clone();
             }
-            author_post_list.push(id.clone());
 
-            archive_posts.push(ArchivePost {
+            let post = ArchivePost {
                 id,
+                title,
                 files,
                 thumb,
                 author,
@@ -100,7 +100,11 @@ pub fn resolve(
                 comments,
                 published,
                 r#type: ArchiveByType::Fanbox,
-            });
+            };
+
+            author_post_list.push(post.clone().into());
+
+            archive_posts.push(post);
         }
         archive_posts
     });
@@ -116,7 +120,7 @@ pub fn resolve(
                 .get(&id)
                 .unwrap_or(&(Default::default(), vec![]))
                 .clone();
-            posts.sort();
+            posts.sort_by(|a, b| b.updated.cmp(&a.updated));
             posts.reverse();
 
             archive_authors.push(ArchiveAuthor {

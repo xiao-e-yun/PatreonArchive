@@ -9,13 +9,13 @@ use std::{
 use chrono::{DateTime, Local};
 use log::info;
 use mime_guess::MimeGuess;
+use post_archiver::{ArchiveComment, ArchiveContent};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
 
 use crate::{
     api::{ArchiveClient, FanboxClient},
-    archive::{ArchiveComment, ArchiveContent},
     author::Author,
     config::Config,
     utils::{PostType, User},
