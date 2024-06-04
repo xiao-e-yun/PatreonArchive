@@ -17,7 +17,7 @@ Options:
   -h, --help             Print help
 ```
 
-Export (Type ref `src/archive.rs`)
+Export (Type ref [PostArchiver](https://github.com/xiao-e-yun/PostArchiver))
 ```
 |- authors.json
 |- [AUTHOR]
