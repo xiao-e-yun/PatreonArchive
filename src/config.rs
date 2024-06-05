@@ -20,17 +20,14 @@ pub struct Config {
     #[clap(env = "FANBOXSESSID")]
     session: String,
     /// Which you path want to save
-    #[arg(short, long, default_value = "./fanbox")]
+    #[arg(short, long, default_value = "./archive")]
     output: PathBuf,
     /// Which you type want to save
     #[arg(short, long, default_value = "supporting")]
     save: SaveType,
-    /// Cache directory [default: "."]
+    /// Force download
     #[arg(short, long)]
-    cache: Option<String>,
-    /// Overwrite existing files
-    #[arg(short, long, name = "no-cache")]
-    no_cache: bool,
+    force: bool,
     /// Whitelist of creator IDs
     #[arg(short, long, num_args = 0..)]
     whitelist: Vec<String>,
@@ -38,12 +35,21 @@ pub struct Config {
     #[arg(short, long, num_args = 0..)]
     blacklist: Vec<String>,
     /// Limit download concurrency
-    #[arg(short, long, default_value = "5")]
+    #[arg(long, default_value = "5")]
     limit: usize,
+    /// Cache directory
+    #[arg(long, name = "cache-path", default_value = ".")]
+    cache_path: Option<String>,
+    /// Overwrite existing files
+    #[arg(long, name = "no-cache")]
+    no_cache: bool,
+    /// Skip free post
+    #[arg(long, name = "skip-free")]
+    skip_free: bool,
     #[command(flatten)]
     pub verbose: Verbosity<InfoLevel>,
     #[clap(skip)]
-    pub multi: MultiProgress,
+    pub multi_progress: MultiProgress,
     #[clap(skip)]
     cleanup: Arc<CacheCleanup>,
 }
@@ -81,10 +87,10 @@ impl Config {
         self.save
     }
     pub fn cache(&self) -> Option<PathBuf> {
-        if self.no_cache {
+        if self.no_cache || self.force {
             return None;
         };
-        self.cache
+        self.cache_path
             .clone()
             .or_else(|| Some(".".to_string()))
             .and_then(|s| Some(PathBuf::from(s)))

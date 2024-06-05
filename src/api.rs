@@ -1,10 +1,14 @@
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, path::PathBuf, sync::Arc};
 
-use reqwest::Client;
+use reqwest::{Client, Response};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, RequestBuilder};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::{
+    fs::File,
+    io::AsyncWriteExt,
+    sync::{Semaphore, SemaphorePermit},
+};
 use url::Url;
 
 use crate::{
@@ -15,53 +19,101 @@ use crate::{
 };
 
 const RETRY_LIMIT: u32 = 3;
-pub trait ArchiveClient {
-    fn new(config: Config) -> Self;
-    fn client(&self) -> &Client;
-    fn semaphore(&self) -> &Semaphore;
 
-    fn cookies(&self) -> Vec<String>;
-    type ResponseError: DeserializeOwned;
-    fn builder(&self, builder: RequestBuilder) -> RequestBuilder;
+#[derive(Debug, Clone)]
+pub struct ArchiveClientInner {
+    client: Client,
+    semaphore: Arc<Semaphore>,
+}
 
-    fn _client(
-        &self,
-    ) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send where Self: Sync {
+impl ArchiveClientInner {
+    fn new(config: &Config) -> Self {
+        Self {
+            client: Client::new(),
+            semaphore: Arc::new(Semaphore::new(config.limit())),
+        }
+    }
+    fn client(&self) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
+    where
+        Self: Sync,
+    {
         async {
-            let semaphore = self.semaphore().acquire().await.unwrap();
+            let semaphore = self.semaphore.acquire().await.unwrap();
             let retry_policy = ExponentialBackoff::builder().build_with_max_retries(RETRY_LIMIT);
-            let client = ClientBuilder::new(self.client().clone())
+            let client = ClientBuilder::new(self.client.clone())
                 .with(RetryTransientMiddleware::new_with_policy(retry_policy))
                 .build();
             (client, semaphore)
         }
     }
-    fn _build(&self, requset: RequestBuilder) -> RequestBuilder {
-        let cookies = self.cookies().join(";");
+}
 
+pub trait ArchiveClient {
+    type ResponseError: DeserializeOwned;
+    fn new(config: Config) -> Self;
+    fn inner(&self) -> &ArchiveClientInner;
+    fn inner_mut(&mut self) -> &mut ArchiveClientInner;
+    fn cookies(&self) -> Vec<String>;
+    fn builder(&self, builder: RequestBuilder) -> RequestBuilder;
+
+    fn client(&self) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
+    where
+        Self: Sync,
+    {
+        self.inner().client()
+    }
+
+    fn build_request(&self, requset: RequestBuilder) -> RequestBuilder {
+        let cookies = self.cookies().join(";");
         self.builder(requset.header("Cookie", cookies))
     }
-    fn _get<T: DeserializeOwned>(&self, url: Url) -> impl Future<Output = Result<T, Self::ResponseError>> + Send where Self: Sync {async {
-        let (client, _) = self._client().await;
-        let builder = client.get(url);
-        let builder = self
-            .builder(builder)
-            .header("Cookie", self.cookies().join(";"));
 
-        let response = builder.send().await.unwrap();
+    fn _get(&self, url: Url) -> impl Future<Output = Response> + Send
+    where
+        Self: Sync,
+    {
+        async move {
+            let (client, _) = self.client().await;
+            let builder = client.get(url.clone());
+            let builder = self
+                .builder(builder)
+                .header("Cookie", self.cookies().join(";"));
 
-        let bytes = response.bytes().await.unwrap();
-
-        match serde_json::from_slice(&bytes) {
-            Ok(value) => Ok(value),
-            Err(e) => {
-                let Ok(response) = serde_json::from_slice(&bytes) else {
-                    panic!("{:?}", e)
-                };
-                Err(response)
+            builder.send().await.unwrap()
+        }
+    }
+    fn _download(&self, url: Url, path: PathBuf) -> impl Future<Output = ()> + Send
+    where
+        Self: Sync,
+    {
+        async move {
+            let response = self._get(url).await;
+            let stream = response.bytes().await.unwrap();
+            let mut file = File::create(&path).await.unwrap();
+            file.write(&stream).await.unwrap();
+        }
+    }
+    fn _get_json<T: DeserializeOwned>(
+        &self,
+        url: Url,
+    ) -> impl Future<Output = Result<T, Self::ResponseError>> + Send
+    where
+        Self: Sync,
+    {
+        async {
+            let response = self._get(url).await;
+            let bytes = response.bytes().await.unwrap();
+            match serde_json::from_slice(&bytes) {
+                Ok(value) => Ok(value),
+                Err(e) => {
+                    let Ok(response) = serde_json::from_slice(&bytes) else {
+                        panic!("{:?}", e)
+                    };
+                    Err(response)
+                }
             }
         }
-    } }
+    }
 }
 
 //==============================================================================
@@ -69,8 +121,7 @@ pub trait ArchiveClient {
 //==============================================================================
 #[derive(Debug, Clone)]
 pub struct FanboxClient {
-    client: Client,
-    semaphore: Arc<Semaphore>,
+    inner: ArchiveClientInner,
     session: String,
 }
 
@@ -78,17 +129,15 @@ impl ArchiveClient for FanboxClient {
     type ResponseError = APIResponseError;
     fn new(config: Config) -> Self {
         Self {
-            client: Client::new(),
+            inner: ArchiveClientInner::new(&config),
             session: config.session(),
-            semaphore: Arc::new(Semaphore::new(1)),
         }
     }
-    fn client(&self) -> &Client {
-        &self.client
+    fn inner(&self) -> &ArchiveClientInner {
+        &self.inner
     }
-
-    fn semaphore(&self) -> &Semaphore {
-        &self.semaphore
+    fn inner_mut(&mut self) -> &mut ArchiveClientInner {
+        &mut self.inner
     }
 
     fn cookies(&self) -> Vec<String> {
@@ -107,7 +156,7 @@ impl FanboxClient {
             post_id
         ))
         .unwrap();
-        let response: APIPost = Self::panic_error(self._get(url).await);
+        let response: APIPost = Self::panic_error(self._get_json(url).await);
         response.raw()
     }
 
@@ -131,7 +180,7 @@ impl FanboxClient {
         let mut updated_cache = HashMap::new();
 
         while let Some(url) = next_url {
-            let response = Self::panic_error(self._get::<APIListCreator>(url).await).raw();
+            let response = Self::panic_error(self._get_json::<APIListCreator>(url).await).raw();
             next_url = response.next_url.clone();
             result.extend(response.items.into_iter().filter_map(|f| {
                 if f.fee_required > author.fee() {
@@ -156,14 +205,18 @@ impl FanboxClient {
 
     pub async fn get_supporting_authors(&self) -> Vec<SupportingAuthor> {
         let url = Url::parse("https://api.fanbox.cc/plan.listSupporting").unwrap();
-        let response: APIListSupporting = Self::panic_error(self._get(url).await);
+        let response: APIListSupporting = Self::panic_error(self._get_json(url).await);
         response.raw()
     }
 
     pub async fn get_following_authors(&self) -> Vec<FollowingAuthor> {
         let url = Url::parse("https://api.fanbox.cc/creator.listFollowing").unwrap();
-        let response: APIListFollowing = Self::panic_error(self._get(url).await);
+        let response: APIListFollowing = Self::panic_error(self._get_json(url).await);
         response.raw()
+    }
+
+    pub async fn download(&self, url: Url, path: PathBuf) {
+        self._download(url, path).await;
     }
 
     fn panic_error<T>(response: Result<T, APIResponseError>) -> T {

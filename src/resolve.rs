@@ -4,8 +4,6 @@ use std::{
     fs::File,
     io::{BufReader, Write},
     path::PathBuf,
-    sync::Arc,
-    time::Duration,
 };
 
 use chrono::{DateTime, Local};
@@ -14,16 +12,20 @@ use log::{info, log_enabled};
 use post_archiver::{
     ArchiveAuthor, ArchiveAuthorsList, ArchiveFrom, ArchiveFile, ArchivePost, ArchivePostShort,
 };
-use reqwest::Client;
 use tokio::{
-    fs::{self},
-    sync::Semaphore,
+    fs,
     task::JoinSet,
-    time::sleep,
+    time::{sleep, Duration},
 };
 use url::Url;
 
-use crate::{author::Author, config::Config, post::Post, unit_short};
+use crate::{
+    api::{ArchiveClient, FanboxClient},
+    author::Author,
+    config::Config,
+    post::Post,
+    unit_short,
+};
 
 pub fn resolve(
     authors: Vec<Author>,
@@ -202,27 +204,21 @@ pub async fn build(
 
     unit_short!("Download Files", {
         let mut await_files = JoinSet::new();
-        let client = reqwest::Client::new();
+        let client = FanboxClient::new(config.clone());
 
         let mut i = 0;
-        let semaphore = Arc::new(Semaphore::new(config.limit()));
         for (url, path) in files {
             let file_path = output.join(&path);
             if !file_path.exists() {
                 i += 1;
-                await_files.spawn(save_file(
-                    url,
-                    file_path,
-                    client.clone(),
-                    config.clone(),
-                    semaphore.clone(),
-                ));
+                let client = client.clone();
+                await_files.spawn(async move { client.download(url, file_path).await });
             }
         }
         let pg = if log_enabled!(log::Level::Info) {
             info!("Downloading {} files", i);
             Some(
-                config.multi.add(ProgressBar::new(i)).with_style(
+                config.multi_progress.add(ProgressBar::new(i)).with_style(
                     ProgressStyle::with_template(
                         "[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len}",
                     )
@@ -238,7 +234,7 @@ pub async fn build(
             await_files.spawn(async move {
                 loop {
                     if pg.length().unwrap() == i {
-                        return Ok(());
+                        return ();
                     }
                     sleep(Duration::from_secs(1)).await;
                     pg.tick();
@@ -251,33 +247,11 @@ pub async fn build(
                 pg.inc(1);
             }
         }
+
+        if let Some(pg) = &pg {
+            pg.finish_with_message("All downloaded")
+        }
     });
-
-    Ok(())
-}
-
-pub async fn save_file(
-    url: Url,
-    path: PathBuf,
-    client: Client,
-    config: Config,
-    semaphore: Arc<Semaphore>,
-) -> Result<(), String> {
-    let _permit = semaphore.acquire().await.unwrap();
-    let response = client
-        .get(url)
-        .header("Origin", "https://www.fanbox.cc")
-        .header("Cookie", config.session())
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .bytes()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    fs::write(&path, response)
-        .await
-        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
