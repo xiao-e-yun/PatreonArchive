@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fs::File,
     io::{BufReader, Write},
@@ -12,7 +12,7 @@ use chrono::{DateTime, Local};
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, log_enabled};
 use post_archiver::{
-    ArchiveAuthor, ArchiveAuthorsList, ArchiveByType, ArchiveFile, ArchivePost, ArchivePostShort,
+    ArchiveAuthor, ArchiveAuthorsList, ArchiveFrom, ArchiveFile, ArchivePost, ArchivePostShort,
 };
 use reqwest::Client;
 use tokio::{
@@ -99,7 +99,7 @@ pub fn resolve(
                 updated,
                 comments,
                 published,
-                r#type: ArchiveByType::Fanbox,
+                from: ArchiveFrom::Fanbox,
             };
 
             author_post_list.push(post.clone().into());
@@ -128,7 +128,7 @@ pub fn resolve(
                 name,
                 posts,
                 thumb,
-                r#type: ArchiveByType::Fanbox,
+                from: HashSet::from([ArchiveFrom::Fanbox]),
             });
         }
 

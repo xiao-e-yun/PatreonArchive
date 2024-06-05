@@ -499,7 +499,7 @@ pub struct PostEmbed {
 pub struct PostUrlEmbed {
     id: String,
     html: String,
-    r#type: String,
+    from: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
