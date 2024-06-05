@@ -270,7 +270,7 @@ impl PostBody {
         let mut body = vec![];
         if let Some(text) = self.text.clone()  {
             if !text.is_empty() {
-                body.push(ArchiveContent::Text(text));
+                body.push(ArchiveContent::Text(text.replace("\n", "\n  ")));
             }
         }
 
