@@ -136,6 +136,9 @@ impl Config {
 
         true
     }
+    pub fn skip_free(&self) -> bool {
+        self.skip_free
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, ValueEnum, PartialEq, Eq)]

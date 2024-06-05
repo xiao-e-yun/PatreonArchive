@@ -163,6 +163,7 @@ impl FanboxClient {
     pub async fn get_post_list(
         &self,
         author: Author,
+        skip_free: bool,
         cache: Option<Arc<PostListCache>>,
     ) -> (Vec<u32>, PostListCache) {
         let mut next_url = Some(
@@ -183,7 +184,7 @@ impl FanboxClient {
             let response = Self::panic_error(self._get_json::<APIListCreator>(url).await).raw();
             next_url = response.next_url.clone();
             result.extend(response.items.into_iter().filter_map(|f| {
-                if f.fee_required > author.fee() {
+                if f.fee_required > author.fee() || (skip_free && f.fee_required == 0) {
                     return None;
                 }
 

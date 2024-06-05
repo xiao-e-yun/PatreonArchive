@@ -33,6 +33,7 @@ pub async fn get_post_list(
     let mut result = Vec::new();
     let mut awaits = tokio::task::JoinSet::new();
 
+    let skip_free = config.skip_free();
     let cache: Option<Arc<PostListCache>> = config.load_cache(&CACHE_FILE).map(|c| Arc::new(c));
 
     let cache = {
@@ -40,7 +41,7 @@ pub async fn get_post_list(
         for author in authors.into_iter() {
             let client = client.clone();
             let cache = cache.clone();
-            awaits.spawn(async move { client.get_post_list(author, cache).await });
+            awaits.spawn(async move { client.get_post_list(author,skip_free ,cache).await });
         }
         cache
     };
@@ -499,7 +500,7 @@ pub struct PostEmbed {
 pub struct PostUrlEmbed {
     id: String,
     html: String,
-    from: String,
+    r#type: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
