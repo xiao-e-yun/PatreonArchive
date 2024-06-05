@@ -20,7 +20,7 @@ pub struct Config {
     #[clap(env = "FANBOXSESSID")]
     session: String,
     /// Which you path want to save
-    #[arg(short, long, default_value = "./fanbox")]
+    #[arg(short, long, default_value = "./archive")]
     output: PathBuf,
     /// Which you type want to save
     #[arg(short, long, default_value = "supporting")]
