@@ -41,7 +41,7 @@ pub struct Config {
     #[arg(long, name = "cache-path", default_value = ".")]
     cache_path: Option<String>,
     /// Overwrite existing files
-    #[arg(short, long, name = "no-cache")]
+    #[arg(long, name = "no-cache")]
     no_cache: bool,
     /// Skip free post
     #[arg(long, name = "skip-free")]
