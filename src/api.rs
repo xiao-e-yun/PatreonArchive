@@ -33,7 +33,16 @@ impl ArchiveClientInner {
             semaphore: Arc::new(Semaphore::new(config.limit())),
         }
     }
-    fn client(&self) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
+    fn client(&self) -> ClientWithMiddleware {
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(RETRY_LIMIT);
+        let client = ClientBuilder::new(self.client.clone())
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build();
+        client
+    }
+    fn client_with_semaphore(
+        &self,
+    ) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
     where
         Self: Sync,
     {
@@ -56,11 +65,14 @@ pub trait ArchiveClient {
     fn cookies(&self) -> Vec<String>;
     fn builder(&self, builder: RequestBuilder) -> RequestBuilder;
 
-    fn client(&self) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
+    fn client(&self) -> ClientWithMiddleware {
+        self.inner().client()
+    }
+    fn client_with_semaphore(&self) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
     where
         Self: Sync,
     {
-        self.inner().client()
+        self.inner().client_with_semaphore()
     }
 
     fn build_request(&self, requset: RequestBuilder) -> RequestBuilder {
@@ -73,7 +85,7 @@ pub trait ArchiveClient {
         Self: Sync,
     {
         async move {
-            let (client, _semaphore) = self.client().await;
+            let client = self.client();
             let builder = client.get(url.clone());
             let builder = self
                 .builder(builder)
@@ -87,10 +99,16 @@ pub trait ArchiveClient {
         Self: Sync,
     {
         async move {
-            let response = self._get(url).await;
+            let (client, _semaphore) = self.client_with_semaphore().await;
+            let builder = client.get(url.clone());
+            let builder = self
+                .builder(builder)
+                .header("Cookie", self.cookies().join(";"));
+
+                let response = builder.send().await.unwrap();
             let stream = response.bytes().await.unwrap();
             let mut file = File::create(&path).await.unwrap();
-            file.write(&stream).await.unwrap();
+            file.write_all(&stream).await.unwrap();
         }
     }
     fn _get_json<T: DeserializeOwned>(

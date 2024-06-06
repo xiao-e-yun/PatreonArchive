@@ -35,7 +35,7 @@ pub struct Config {
     #[arg(short, long, num_args = 0..)]
     blacklist: Vec<String>,
     /// Limit download concurrency
-    #[arg(long, default_value = "50")]
+    #[arg(long, default_value = "5")]
     limit: usize,
     /// Cache directory
     #[arg(long, name = "cache-path", default_value = ".")]
