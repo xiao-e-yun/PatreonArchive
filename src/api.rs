@@ -73,7 +73,7 @@ pub trait ArchiveClient {
         Self: Sync,
     {
         async move {
-            let (client, _) = self.client().await;
+            let (client, _semaphore) = self.client().await;
             let builder = client.get(url.clone());
             let builder = self
                 .builder(builder)
