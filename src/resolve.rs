@@ -242,7 +242,7 @@ pub async fn build(
             });
         }
 
-        while await_files.join_next().await.is_some() {
+        while let Some(_) = await_files.join_next().await {
             if let Some(pg) = &pg {
                 pg.inc(1);
             }
