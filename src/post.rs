@@ -246,7 +246,7 @@ impl PostBody {
 
     pub fn content(&self, path: PathBuf) -> Vec<ArchiveContent> {
         let mut content = vec![];
-        content.extend(self.text());
+        content.extend(self.text(path.clone()));
 
         for image in self.images.clone().unwrap_or_default() {
             let path = path.join(image.filename());
@@ -269,7 +269,7 @@ impl PostBody {
         content
     }
 
-    pub fn text(&self) -> Vec<ArchiveContent> {
+    pub fn text(&self, path: PathBuf) -> Vec<ArchiveContent> {
         let mut body = vec![];
         if let Some(text) = self.text.clone() {
             if !text.is_empty() {
@@ -293,12 +293,11 @@ impl PostBody {
                 )),
                 PostBlock::Image { image_id } => {
                     let image = self.image_map.as_ref().unwrap().get(&image_id).unwrap();
-                    let url = format!("{}.{}", image.id, image.extension);
-                    ArchiveContent::Image(url)
+                    ArchiveContent::Image(path.join(image.filename()).to_string_lossy().to_string())
                 }
                 PostBlock::File { file_id } => {
                     let file = self.file_map.as_ref().unwrap().get(&file_id).unwrap();
-                    ArchiveContent::File(file.filename())
+                    ArchiveContent::File(path.join(file.filename()).to_string_lossy().to_string())
                 }
                 PostBlock::Embed { embed_id } => {
                     let embed = self.embed_map.as_ref().unwrap().get(&embed_id).unwrap();
