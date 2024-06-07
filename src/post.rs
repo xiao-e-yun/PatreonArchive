@@ -273,7 +273,7 @@ impl PostBody {
         let mut body = vec![];
         if let Some(text) = self.text.clone() {
             if !text.is_empty() {
-                body.push(ArchiveContent::Text(text.replace("\n", "\n  ")));
+                body.push(ArchiveContent::Text(text.replace("\n", "  \n")));
             }
         }
 
@@ -282,9 +282,9 @@ impl PostBody {
             body.push(match block {
                 PostBlock::P { text, styles } => {
                     if text.is_empty() {
-                        ArchiveContent::Text("  ".to_string())
+                        ArchiveContent::Text("".to_string())
                     } else {
-                        ArchiveContent::Text(set_style(text, styles.unwrap_or_default()))
+                        ArchiveContent::Text(set_style(text, styles.unwrap_or_default()) + "  ")
                     }
                 }
                 PostBlock::Header { text, styles } => ArchiveContent::Text(format!(
