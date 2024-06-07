@@ -20,10 +20,10 @@ pub struct Config {
     #[clap(env = "FANBOXSESSID")]
     session: String,
     /// Which you path want to save
-    #[arg(short, long, default_value = "./archive")]
+    #[arg(short, long, default_value = "./archive", env = "OUTPUT")]
     output: PathBuf,
     /// Which you type want to save
-    #[arg(short, long, default_value = "supporting")]
+    #[arg(short, long, default_value = "supporting", env = "SAVE")]
     save: SaveType,
     /// Force download
     #[arg(short, long)]
