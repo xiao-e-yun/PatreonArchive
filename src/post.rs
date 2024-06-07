@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
     error::Error,
-    mem,
     path::PathBuf,
     sync::Arc,
 };
@@ -9,7 +8,7 @@ use std::{
 use chrono::{DateTime, Local};
 use log::info;
 use mime_guess::MimeGuess;
-use post_archiver::{ArchiveComment, ArchiveContent};
+use post_archiver::{ArchiveComment, ArchiveContent, ArchiveFile};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use url::Url;
@@ -41,7 +40,7 @@ pub async fn get_post_list(
         for author in authors.into_iter() {
             let client = client.clone();
             let cache = cache.clone();
-            awaits.spawn(async move { client.get_post_list(author,skip_free ,cache).await });
+            awaits.spawn(async move { client.get_post_list(author, skip_free, cache).await });
         }
         cache
     };
@@ -229,20 +228,19 @@ impl PostBody {
 
         files
     }
-    pub fn videos_files(mut files: Vec<PostFile>) -> (Vec<PostFile>, Vec<PostFile>) {
-        let mut videos = vec![];
-        for file in mem::take(&mut files) {
-            let ext = MimeGuess::from_ext(&file.extension);
-            match ext.first_or_text_plain().type_() {
-                mime::VIDEO => videos.push(file),
-                _ => files.push(file),
-            }
+    pub fn parse_video_or_file(file: PostFile, path: PathBuf) -> ArchiveFile {
+        let filename: PathBuf = path.file_name().unwrap().into();
+        match Self::is_video(&file.extension) {
+            true => ArchiveFile::Video { path, filename },
+            false => ArchiveFile::File { path, filename },
         }
-
-        (videos, files)
+    }
+    pub fn is_video(extension: &str) -> bool {
+        let ext = MimeGuess::from_ext(extension);
+        ext.first_or_text_plain().type_() == mime::VIDEO
     }
     pub fn web_videos(&self) -> Vec<String> {
-        let videos = self.videos.clone().unwrap_or_default();
+        let videos: Vec<PostVideo> = self.videos.clone().unwrap_or_default();
         videos.iter().map(|video| Self::map_video(video)).collect()
     }
 
@@ -260,8 +258,12 @@ impl PostBody {
         }
 
         for file in self.files.clone().unwrap_or_default() {
-            let path = path.join(file.filename());
-            content.push(ArchiveContent::File(path.to_string_lossy().to_string()));
+            let path = path.join(file.filename()).with_extension(file.extension());
+            if Self::is_video(&file.extension()) {
+                content.push(ArchiveContent::Video(path.to_string_lossy().to_string()));
+            } else {
+                content.push(ArchiveContent::File(path.to_string_lossy().to_string()));
+            }
         }
 
         content
@@ -269,7 +271,7 @@ impl PostBody {
 
     pub fn text(&self) -> Vec<ArchiveContent> {
         let mut body = vec![];
-        if let Some(text) = self.text.clone()  {
+        if let Some(text) = self.text.clone() {
             if !text.is_empty() {
                 body.push(ArchiveContent::Text(text.replace("\n", "\n  ")));
             }

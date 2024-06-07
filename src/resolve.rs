@@ -10,7 +10,7 @@ use chrono::{DateTime, Local};
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, log_enabled};
 use post_archiver::{
-    ArchiveAuthor, ArchiveAuthorsList, ArchiveFrom, ArchiveFile, ArchivePost, ArchivePostShort,
+    ArchiveAuthor, ArchiveAuthorsList, ArchiveFile, ArchiveFrom, ArchivePost, ArchivePostShort,
 };
 use tokio::{
     fs,
@@ -23,7 +23,7 @@ use crate::{
     api::{ArchiveClient, FanboxClient},
     author::Author,
     config::Config,
-    post::Post,
+    post::{Post, PostBody},
     unit_short,
 };
 
@@ -47,12 +47,11 @@ pub fn resolve(
                 .files()
                 .into_iter()
                 .map(|file| {
-                    let file_path = out_path.join(file.filename());
+                    let file_path = out_path
+                        .join(file.filename())
+                        .with_extension(file.extension());
                     download_files.push((file.url(), file_path.clone()));
-                    ArchiveFile::File {
-                        path: file_path,
-                        filename: file.filename().into(),
-                    }
+                    PostBody::parse_video_or_file(file, file_path)
                 })
                 .collect::<Vec<ArchiveFile>>();
 
