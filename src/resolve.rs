@@ -6,9 +6,8 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::{DateTime, Local};
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{info, log_enabled};
+use log::{debug, info, log_enabled};
 use post_archiver::{
     ArchiveAuthor, ArchiveAuthorsList, ArchiveFile, ArchiveFrom, ArchivePost, ArchivePostShort,
 };
@@ -30,19 +29,21 @@ use crate::{
 pub fn resolve(
     authors: Vec<Author>,
     posts: Vec<Post>,
-) -> (Vec<ArchiveAuthor>, Vec<ArchivePost>, Vec<(Url, PathBuf)>) {
+    config: &Config,
+) -> Result<(Vec<ArchiveAuthor>, Vec<ArchivePost>, Vec<(Url, PathBuf)>), Box<dyn Error>> {
     let mut download_files: Vec<(Url, PathBuf)> = Vec::new();
-    let mut map_author: HashMap<
-        String,
-        ((DateTime<Local>, Option<PathBuf>), Vec<ArchivePostShort>),
-    > = HashMap::new();
+    let mut map_author: HashMap<String, Vec<ArchivePostShort>> = HashMap::new();
 
+    let output = config.output();
     let archive_posts = unit_short!("Resolving Posts", {
         let mut archive_posts = Vec::new();
         for post in posts {
             let body = post.body();
             let out_path = PathBuf::from(post.author()).join(post.id());
 
+            debug!("Resolving Post: {}", post.id());
+
+            debug!("Resolving Files");
             let mut files = body
                 .files()
                 .into_iter()
@@ -74,6 +75,7 @@ pub fn resolve(
                 .collect::<Vec<ArchiveFile>>();
             files.extend(images);
 
+            debug!("Resolving Meta Data");
             let id = post.id();
             let title = post.title();
             let author = post.author();
@@ -83,12 +85,8 @@ pub fn resolve(
 
             let content = body.content(out_path);
 
-            let ((thumb_published, author_thumb), author_post_list) =
-                map_author.entry(author.clone()).or_default();
-            if published > *thumb_published && thumb.is_some() {
-                *thumb_published = published.clone();
-                *author_thumb = thumb.clone();
-            }
+            // Add post to author list
+            let author_post_list = map_author.entry(author.clone()).or_default();
 
             let post = ArchivePost {
                 id,
@@ -114,29 +112,47 @@ pub fn resolve(
         let mut archive_authors = Vec::new();
 
         for author in authors {
+            debug!("Resolving Author: {}", author.id());
             let id = author.id().to_string();
             let name = author.name();
 
-            let ((_, thumb), mut posts) = map_author
-                .get(&id)
-                .unwrap_or(&(Default::default(), vec![]))
-                .clone();
+            debug!("Resolving Author Posts");
+            let mut posts = map_author.get(&id).unwrap_or(&vec![]).clone();
             posts.sort_by(|a, b| b.updated.cmp(&a.updated));
-            posts.reverse();
+            debug!("Posts: {}", posts.len());
 
-            archive_authors.push(ArchiveAuthor {
+            let mut updated_author = ArchiveAuthor {
                 id,
                 name,
                 posts,
-                thumb,
+                thumb: None,
                 from: HashSet::from([ArchiveFrom::Fanbox]),
-            });
+            };
+
+            let output = output.join(&author.id());
+            let path = output.join("author.json");
+            debug!("Check old author data: {}", path.display());
+            if path.exists() {
+                debug!("Loading old author data");
+                let file = File::open(&path)?;
+                let reader = BufReader::new(file);
+                let mut old_author: ArchiveAuthor = serde_json::from_reader(reader)?;
+                old_author.extend(updated_author);
+                updated_author = old_author;
+            }
+
+            debug!("Get author thumb");
+            updated_author.thumb = updated_author
+                .posts
+                .iter()
+                .find_map(|post| post.thumb.clone());
+            archive_authors.push(updated_author);
         }
 
         archive_authors
     });
 
-    (archive_authors, archive_posts, download_files)
+    Ok((archive_authors, archive_posts, download_files))
 }
 
 pub async fn build(
@@ -150,36 +166,37 @@ pub async fn build(
 
     unit_short!("Write Data", {
         {
+            debug!("Parse authors to ArchiveAuthorsList");
             let mut archive_authors = ArchiveAuthorsList::from_vector(authors.clone());
             let path = output.join("authors.json");
+            debug!("Check old authors data: {}", path.display());
             if path.exists() {
-                let file = File::open(&path)?;
+                debug!("Loading old authors data");
+                let file = File::open(&path).unwrap();
                 let reader = BufReader::new(file);
                 let mut old_authors: ArchiveAuthorsList = serde_json::from_reader(reader)?;
                 old_authors.extend(archive_authors);
                 archive_authors = old_authors;
             }
 
+            let path = output.join("authors.json");
             info!("Writing authors.json");
             let mut file = File::create(&path).unwrap();
             file.write_all(serde_json::to_vec(&archive_authors)?.as_slice())
                 .unwrap();
         }
 
-        info!("Writing `/[author]/author.json` (total: {})", authors.len());
-        for mut author in authors.into_iter() {
+        info!(
+            "Writing `/[author]/author.json` (total: {})",
+            authors.len()
+        );
+        for author in authors.into_iter() {
             let output = output.join(&author.id);
+            let path = output.join("author.json");
             if !output.exists() {
                 fs::create_dir(&output).await?;
             }
-            let path = output.join("author.json");
-            if path.exists() {
-                let file = File::open(&path)?;
-                let reader = BufReader::new(file);
-                let mut old_author: ArchiveAuthor = serde_json::from_reader(reader)?;
-                old_author.extend(author);
-                author = old_author;
-            }
+
             let mut file = File::create(&path).unwrap();
             file.write_all(serde_json::to_vec(&author)?.as_slice())
                 .unwrap();

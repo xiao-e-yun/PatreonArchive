@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let posts = unit!("Get Posts", get_posts(posts, &config).await?);
 
-    let (authors, posts, files) = unit!("Resolve", resolve(authors, posts));
+    let (authors, posts, files) = unit!("Resolve", resolve(authors, posts, &config))?;
 
     unit!("Build", build(authors, posts, files, &config).await?);
 
