@@ -26,3 +26,10 @@ Export (Type ref [PostArchiver](https://github.com/xiao-e-yun/PostArchiver))
       |- post.json
       |- [FILES]
 ```
+
+## Build
+
+How to build & run code
+```sh
+cargo run
+```
