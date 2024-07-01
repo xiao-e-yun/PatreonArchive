@@ -1,6 +1,10 @@
 use std::{collections::HashMap, future::Future, path::PathBuf, sync::Arc};
 
-use reqwest::{Client, Response};
+use log::error;
+use reqwest::{
+    header::{ORIGIN, USER_AGENT},
+    Client, Response,
+};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware, RequestBuilder};
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -68,7 +72,9 @@ pub trait ArchiveClient {
     fn client(&self) -> ClientWithMiddleware {
         self.inner().client()
     }
-    fn client_with_semaphore(&self) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
+    fn client_with_semaphore(
+        &self,
+    ) -> impl Future<Output = (ClientWithMiddleware, SemaphorePermit)> + Send
     where
         Self: Sync,
     {
@@ -105,7 +111,7 @@ pub trait ArchiveClient {
                 .builder(builder)
                 .header("Cookie", self.cookies().join(";"));
 
-                let response = builder.send().await.unwrap();
+            let response = builder.send().await.unwrap();
             let stream = response.bytes().await.unwrap();
             let mut file = File::create(&path).await.unwrap();
             file.write_all(&stream).await.unwrap();
@@ -125,7 +131,10 @@ pub trait ArchiveClient {
                 Ok(value) => Ok(value),
                 Err(e) => {
                     let Ok(response) = serde_json::from_slice(&bytes) else {
-                        panic!("{:?}", e)
+                        error!("parse to json error:");
+                        error!("{:?}", &bytes);
+
+                        panic!("{:?}", e);
                     };
                     Err(response)
                 }
@@ -140,6 +149,8 @@ pub trait ArchiveClient {
 #[derive(Debug, Clone)]
 pub struct FanboxClient {
     inner: ArchiveClientInner,
+    user_agent: String,
+    clearance: String,
     session: String,
 }
 
@@ -148,6 +159,8 @@ impl ArchiveClient for FanboxClient {
     fn new(config: Config) -> Self {
         Self {
             inner: ArchiveClientInner::new(&config),
+            user_agent: config.user_agent(),
+            clearance: config.clearance(),
             session: config.session(),
         }
     }
@@ -159,11 +172,13 @@ impl ArchiveClient for FanboxClient {
     }
 
     fn cookies(&self) -> Vec<String> {
-        vec![self.session.clone()]
+        vec![self.session.clone(), self.clearance.clone()]
     }
 
     fn builder(&self, builder: RequestBuilder) -> RequestBuilder {
-        builder.header("Origin", "https://www.fanbox.cc")
+        builder
+            .header(ORIGIN, "https://www.fanbox.cc")
+            .header(USER_AGENT, self.user_agent.clone())
     }
 }
 
