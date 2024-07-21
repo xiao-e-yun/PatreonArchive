@@ -314,7 +314,13 @@ impl PostBody {
                     ArchiveContent::Text(Self::map_video(video))
                 }
                 PostBlock::UrlEmbed { url_embed_id } => {
-                    ArchiveContent::Text(format!("> {}", url_embed_id))
+                    let url_embed = self
+                        .url_embed_map
+                        .as_ref()
+                        .unwrap()
+                        .get(&url_embed_id)
+                        .unwrap();
+                    ArchiveContent::Text(Self::map_url_embed(url_embed))
                 }
             });
 
@@ -368,6 +374,31 @@ impl PostBody {
                 format!("[![youtube](https://img.youtube.com/vi/{}/0.jpg)](https://www.youtube.com/watch?v={})",embed.id, embed.id)
             }
             _ => todo!(),
+        }
+    }
+
+    fn map_url_embed(embed: &PostUrlEmbed) -> String {
+        match embed {
+            PostUrlEmbed::HtmlCard { id: _, html } => {
+                let Some(start) = html.find("<iframe src=\"") else {
+                    return "[Invalid URL Embed]".to_string();
+                };
+                let mut src = html.split_at(start + 13).1;
+
+                let Some(end) = src.find("\"") else {
+                    return "[Invalid URL Embed]".to_string();
+                };
+                src = src.split_at(end).0;
+
+                src.to_string()
+            }
+            PostUrlEmbed::Default {
+                id: _,
+                url,
+                host: _,
+            } => {
+                format!("[{}]({})", url, url)
+            }
         }
     }
 }
@@ -497,11 +528,15 @@ pub struct PostEmbed {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
-#[serde(rename_all = "camelCase")]
-pub struct PostUrlEmbed {
-    id: String,
-    html: String,
-    r#type: String,
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PostUrlEmbed {
+    #[serde(rename = "html.card")]
+    HtmlCard { id: String, html: String },
+    Default {
+        id: String,
+        url: String,
+        host: String,
+    },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
