@@ -186,10 +186,7 @@ pub async fn build(
                 .unwrap();
         }
 
-        info!(
-            "Writing `/[author]/author.json` (total: {})",
-            authors.len()
-        );
+        info!("Writing `/[author]/author.json` (total: {})", authors.len());
         for author in authors.into_iter() {
             let output = output.join(&author.id);
             let path = output.join("author.json");
