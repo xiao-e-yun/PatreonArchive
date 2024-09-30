@@ -18,7 +18,7 @@ use url::Url;
 use crate::{
     author::{Author, FollowingAuthor, SupportingAuthor},
     config::Config,
-    post::{Post, PostList, PostListCache},
+    post::{Post, PostListCache, PostListItem},
     utils::Request,
 };
 
@@ -117,6 +117,7 @@ pub trait ArchiveClient {
             file.write_all(&stream).await.unwrap();
         }
     }
+    #[track_caller]
     fn _get_json<T: DeserializeOwned>(
         &self,
         url: Url,
@@ -124,6 +125,7 @@ pub trait ArchiveClient {
     where
         Self: Sync,
     {
+        #[track_caller]
         async {
             let response = self._get(url).await;
             let bytes = response.bytes().await.unwrap();
@@ -199,13 +201,16 @@ impl FanboxClient {
         skip_free: bool,
         cache: Option<Arc<PostListCache>>,
     ) -> (Vec<u32>, PostListCache) {
-        let mut next_url = Some(
-            Url::parse(&format!(
-                "https://api.fanbox.cc/post.listCreator?creatorId={}&limit=300",
-                author.id()
-            ))
-            .unwrap(),
-        );
+        let paginate = Url::parse(&format!(
+            "https://api.fanbox.cc/post.paginateCreator?creatorId={}",
+            author.id()
+        ))
+        .unwrap();
+        let urls = self
+            ._get_json::<APIListCreatorPaginate>(paginate)
+            .await
+            .unwrap()
+            .raw();
 
         let has_cache = cache.is_some();
         let cache = cache.unwrap_or_default();
@@ -213,29 +218,73 @@ impl FanboxClient {
         let mut result = Vec::new();
         let mut updated_cache = HashMap::new();
 
-        while let Some(url) = next_url {
+        for url in urls {
+            let url = Url::parse(&url).unwrap();
             let response = Self::panic_error(self._get_json::<APIListCreator>(url).await).raw();
-            next_url = response.next_url.clone();
-            result.extend(response.items.into_iter().filter_map(|f| {
-                if f.fee_required > author.fee() || (skip_free && f.fee_required == 0) {
+            result.extend(response.into_iter().filter_map(|item| {
+                if item.fee_required > author.fee() || (skip_free && item.fee_required == 0) {
                     return None;
                 }
 
                 if has_cache {
-                    let last_updated = cache.get(&f.id).cloned().unwrap_or_default();
-                    if f.updated_datetime == last_updated {
+                    let last_updated = cache.get(&item.id).cloned().unwrap_or_default();
+                    if item.updated_datetime == last_updated {
                         return None;
                     }
 
-                    updated_cache.insert(f.id, f.updated_datetime);
+                    updated_cache.insert(item.id, item.updated_datetime);
                 }
 
-                Some(f.id)
+                Some(item.id)
             }));
         }
 
         (result, updated_cache)
     }
+    // OLD VERSION
+    // pub async fn get_post_list(
+    //     &self,
+    //     author: Author,
+    //     skip_free: bool,
+    //     cache: Option<Arc<PostListCache>>,
+    // ) -> (Vec<u32>, PostListCache) {
+    //     let mut next_url = Some(
+    //         Url::parse(&format!(
+    //             "https://api.fanbox.cc/post.listCreator?creatorId={}&maxPublishedDatetime={}&maxId=1&limit=300&withPinned=false",
+    //             author.id()
+    //         ))
+    //         .unwrap(),
+    //     );
+
+    //     let has_cache = cache.is_some();
+    //     let cache = cache.unwrap_or_default();
+
+    //     let mut result = Vec::new();
+    //     let mut updated_cache = HashMap::new();
+
+    //     while let Some(url) = next_url {
+    //         let response = Self::panic_error(self._get_json::<APIListCreator>(url).await).raw();
+    //         next_url = response.next_url.clone();
+    //         result.extend(response.items.into_iter().filter_map(|f| {
+    //             if f.fee_required > author.fee() || (skip_free && f.fee_required == 0) {
+    //                 return None;
+    //             }
+
+    //             if has_cache {
+    //                 let last_updated = cache.get(&f.id).cloned().unwrap_or_default();
+    //                 if f.updated_datetime == last_updated {
+    //                     return None;
+    //                 }
+
+    //                 updated_cache.insert(f.id, f.updated_datetime);
+    //             }
+
+    //             Some(f.id)
+    //         }));
+    //     }
+
+    //     (result, updated_cache)
+    // }
 
     pub async fn get_supporting_authors(&self) -> Vec<SupportingAuthor> {
         let url = Url::parse("https://api.fanbox.cc/plan.listSupporting").unwrap();
@@ -262,9 +311,10 @@ impl FanboxClient {
 }
 
 pub type APIPost = Request<Post>;
-pub type APIListCreator = Request<PostList>;
+pub type APIListCreator = Request<Vec<PostListItem>>;
 pub type APIListSupporting = Request<Vec<SupportingAuthor>>;
 pub type APIListFollowing = Request<Vec<FollowingAuthor>>;
+pub type APIListCreatorPaginate = Request<Vec<String>>;
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 pub struct APIResponseError {

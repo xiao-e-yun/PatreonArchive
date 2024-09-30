@@ -63,12 +63,12 @@ pub async fn get_post_list(
     Ok(result)
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
-#[serde(rename_all = "camelCase")]
-pub struct PostList {
-    pub items: Vec<PostListItem>,
-    pub next_url: Option<Url>,
-}
+// #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
+// #[serde(rename_all = "camelCase")]
+// pub struct PostList {
+//     pub items: Vec<PostListItem>,
+//     pub next_url: Option<Url>,
+// }
 
 #[serde_as]
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
@@ -150,7 +150,6 @@ pub struct Post {
     #[serde(skip_serializing_if = "Option::is_none")]
     body: Option<PostBody>,
     excerpt: String,
-    comment_list: CommentList,
     next_post: Option<PostShort>,
     prev_post: Option<PostShort>,
     image_for_share: Url,
@@ -171,9 +170,6 @@ impl Post {
     }
     pub fn updated(&self) -> DateTime<Local> {
         self.updated_datetime.clone()
-    }
-    pub fn comments(&self) -> Vec<Comment> {
-        self.comment_list.items.clone()
     }
     pub fn body(&self) -> PostBody {
         self.body
@@ -379,6 +375,18 @@ impl PostBody {
 
     fn map_url_embed(embed: &PostUrlEmbed) -> String {
         match embed {
+            PostUrlEmbed::Html { id: _, html } => {
+                let Some(start) = html.find("<iframe src=\"") else {
+                    return "[Invalid URL Embed]".to_string();
+                };
+                let mut src = html.split_at(start + 13).1;
+                let Some(end) = src.find("\"") else {
+                    return "[Invalid URL Embed]".to_string();
+                };
+                src = src.split_at(end).0;
+
+                format!("[{}]({})", src, src)
+            }
             PostUrlEmbed::HtmlCard { id: _, html } => {
                 let Some(start) = html.find("<iframe src=\"") else {
                     return "[Invalid URL Embed]".to_string();
@@ -390,7 +398,13 @@ impl PostBody {
                 };
                 src = src.split_at(end).0;
 
-                src.to_string()
+                format!("[{}]({})", src, src)
+            }
+            PostUrlEmbed::FanboxPost { id: _id, post_info } => {
+                format!(
+                    "[Fanbox Post {}](https://xiaoeyun.me/archive/{}/{})",
+                    post_info.title, post_info.creator_id, post_info.id
+                )
             }
             PostUrlEmbed::Default {
                 id: _,
@@ -530,20 +544,21 @@ pub struct PostEmbed {
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PostUrlEmbed {
+    #[serde(rename = "html")]
+    Html { id: String, html: String },
     #[serde(rename = "html.card")]
     HtmlCard { id: String, html: String },
+    #[serde(rename = "fanbox.post")]
+    FanboxPost {
+        id: String,
+        #[serde(rename = "postInfo")]
+        post_info: PostListItem,
+    },
     Default {
         id: String,
         url: String,
         host: String,
     },
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, Hash)]
-#[serde(rename_all = "camelCase")]
-pub struct CommentList {
-    items: Vec<Comment>,
-    next_url: Option<String>,
 }
 
 #[serde_as]

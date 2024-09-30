@@ -1,3 +1,5 @@
+#![feature(closure_track_caller)]
+
 pub mod api;
 pub mod author;
 pub mod config;
@@ -5,6 +7,7 @@ pub mod post;
 
 pub mod resolve;
 pub mod utils;
+
 
 #[cfg(test)]
 mod test;

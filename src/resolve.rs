@@ -81,7 +81,8 @@ pub fn resolve(
             let author = post.author();
             let updated = post.updated();
             let published = post.published();
-            let comments = post.comments().into_iter().map(|c| c.into()).collect();
+            let comments = vec![]; //TODO
+            // let comments = post.comments().into_iter().map(|c| c.into()).collect();
 
             let content = body.content(out_path);
 
