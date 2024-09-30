@@ -254,7 +254,7 @@ impl PostBody {
         }
 
         for file in self.files.clone().unwrap_or_default() {
-            let path = path.join(file.filename()).with_extension(file.extension());
+            let path = path.join(file.filename());
             if Self::is_video(&file.extension()) {
                 content.push(ArchiveContent::Video(path.to_string_lossy().to_string()));
             } else {
@@ -520,7 +520,7 @@ impl PostFile {
         self.id.clone()
     }
     pub fn filename(&self) -> String {
-        self.name.clone()
+        format!("{}.{}", self.name, self.extension)
     }
     pub fn extension(&self) -> String {
         self.extension.clone()

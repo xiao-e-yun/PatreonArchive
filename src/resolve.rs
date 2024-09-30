@@ -49,8 +49,7 @@ pub fn resolve(
                 .into_iter()
                 .map(|file| {
                     let file_path = out_path
-                        .join(file.filename())
-                        .with_extension(file.extension());
+                        .join(file.filename());
                     download_files.push((file.url(), file_path.clone()));
                     PostBody::parse_video_or_file(file, file_path)
                 })
