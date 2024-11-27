@@ -288,16 +288,26 @@ impl PostBody {
                     set_style(text, styles.unwrap_or_default())
                 )),
                 PostBlock::Image { image_id } => {
-                    let image = self.image_map.as_ref().unwrap().get(&image_id).unwrap();
-                    ArchiveContent::Image(path.join(image.filename()).to_string_lossy().to_string())
+                    let image = self.image_map.as_ref().unwrap().get(&image_id);
+                    match image {
+                        Some(image) => ArchiveContent::Image(path.join(image.filename()).to_string_lossy().to_string()),
+                        None => ArchiveContent::Text(image_id),
+                        
+                    }
                 }
                 PostBlock::File { file_id } => {
-                    let file = self.file_map.as_ref().unwrap().get(&file_id).unwrap();
-                    ArchiveContent::File(path.join(file.filename()).to_string_lossy().to_string())
+                    let file = self.file_map.as_ref().unwrap().get(&file_id);
+                    match file {
+                        Some(file) =>  ArchiveContent::File(path.join(file.filename()).to_string_lossy().to_string()),
+                        None => ArchiveContent::Text(file_id)
+                    }
                 }
                 PostBlock::Embed { embed_id } => {
-                    let embed = self.embed_map.as_ref().unwrap().get(&embed_id).unwrap();
-                    ArchiveContent::Text(Self::map_embed(embed))
+                    let embed = self.embed_map.as_ref().unwrap().get(&embed_id);
+                    match embed {
+                        Some(embed) => ArchiveContent::Text(Self::map_embed(embed)),
+                        None => ArchiveContent::Text(embed_id)
+                    }
                 }
                 PostBlock::Video { video_id } => {
                     let video = self
@@ -369,7 +379,34 @@ impl PostBody {
             "youtube" => {
                 format!("[![youtube](https://img.youtube.com/vi/{}/0.jpg)](https://www.youtube.com/watch?v={})",embed.id, embed.id)
             }
-            _ => todo!(),
+            "google_forms" => {
+                format!("[Google Form](https://docs.google.com/forms/d/e/{}/viewform)",embed.content_id)
+            }
+            "fanbox" => {
+                fn deconstruct(input: &str) -> Result<(i32, i32), &'static str> {
+                    let parts: Vec<&str> = input.split('/').collect();
+                    if parts.len() == 4 && parts[0] == "creator" && parts[2] == "post" {
+                        let creator: i32 =
+                            parts[1].parse().map_err(|_| "Failed to parse creator ID")?;
+                        let post: i32 = parts[3].parse().map_err(|_| "Failed to parse post ID")?;
+                        Ok((creator, post))
+                    } else {
+                        Err("The input string does not match the expected format.")
+                    }
+                }
+
+                let (_creator, post) = deconstruct(&embed.content_id).unwrap();
+                format!(
+                    "[Fanbox Post ({})](https://official.fanbox.cc/posts/{})",
+                    post, post
+                )
+            }
+            provider => {
+                println!("{}", provider);
+                println!("{}", embed.id);
+                println!("{}", embed.content_id);
+                todo!()
+            }
         }
     }
 
