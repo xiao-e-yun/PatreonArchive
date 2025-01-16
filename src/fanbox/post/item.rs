@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::fanbox::User;
 
-
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct PostListItem {

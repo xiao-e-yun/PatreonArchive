@@ -1,11 +1,11 @@
-use std::{ collections::HashSet, error::Error, ops::Deref };
+use std::{collections::HashSet, error::Error, ops::Deref};
 
 use chrono::{DateTime, Utc};
 use log::info;
-use post_archiver::{ Author, AuthorId, FileMetaId, Link };
-use rusqlite::{ params, Connection, OptionalExtension };
+use post_archiver::{Author, AuthorId, FileMetaId, Link};
+use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::{ api::fanbox::FanboxClient, config::Config, fanbox::Creator };
+use crate::{api::fanbox::FanboxClient, config::Config, fanbox::Creator};
 
 pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error>> {
     let accepts = config.accepts();
@@ -52,7 +52,10 @@ pub fn display_creators(creators: &Vec<Creator>) {
             fee_width = creator.fee().to_string().len().max(fee_width);
         }
 
-        info!("+-{:-<id_width$}-+-{:-<fee_width$}--+-{}------- - -", " CreatorId ", " Fee ", " Name ");
+        info!(
+            "+-{:-<id_width$}-+-{:-<fee_width$}--+-{}------- - -",
+            " CreatorId ", " Fee ", " Name "
+        );
         for creator in creators.iter() {
             info!(
                 "| {:id_width$} | {:fee_width$}$ | {}",
@@ -72,7 +75,7 @@ pub fn display_creators(creators: &Vec<Creator>) {
 
 pub fn sync_creators(
     conn: &mut Connection,
-    creators: Vec<Creator>
+    creators: Vec<Creator>,
 ) -> Result<Vec<SyncedCreator>, Box<dyn Error>> {
     let mut list = vec![];
     let tx = conn.transaction().unwrap();
@@ -80,19 +83,18 @@ pub fn sync_creators(
         let mut get_alias_stmt = tx.prepare("SELECT target FROM author_alias WHERE source = ?")?;
         let mut get_author_stmt = tx.prepare("SELECT * FROM authors WHERE id = ?")?;
         let mut update_author_stmt = tx.prepare("UPDATE authors SET links = ? WHERE id = ?")?;
-        let mut insert_author_stmt = tx.prepare(
-            "INSERT INTO authors (name,links) VALUES (?,?) RETURNING *"
-        )?;
-        let mut insert_alias_stmt = tx.prepare(
-            "INSERT INTO author_alias (source,target) VALUES (?,?)"
-        )?;
+        let mut insert_author_stmt =
+            tx.prepare("INSERT INTO authors (name,links) VALUES (?,?) RETURNING *")?;
+        let mut insert_alias_stmt =
+            tx.prepare("INSERT INTO author_alias (source,target) VALUES (?,?)")?;
 
         for creator in creators {
             let alias = format!("fanbox:{}", creator.id());
             let link = || Link::new("fanbox", &format!("https://{}.fanbox.cc/", creator.id()));
 
-            let author = match
-                get_alias_stmt.query_row([&alias], |row| row.get::<_, u32>(0)).optional()?
+            let author = match get_alias_stmt
+                .query_row([&alias], |row| row.get::<_, u32>(0))
+                .optional()?
             {
                 Some(id) => {
                     // it should be safe to unwrap here
@@ -113,12 +115,19 @@ pub fn sync_creators(
                     author
                 }
                 None => {
-                    info!(" + Add new creator {} -> `{}`", creator.id(), creator.name());
+                    info!(
+                        " + Add new creator {} -> `{}`",
+                        creator.id(),
+                        creator.name()
+                    );
                     let name = creator.name();
                     let link = link();
                     let links = serde_json::to_string(&[link])?;
-                    let author = insert_author_stmt.query_row(params![name, links], row_to_author)?;
-                    insert_alias_stmt.execute(params![alias, author.id.raw()]).unwrap();
+                    let author =
+                        insert_author_stmt.query_row(params![name, links], row_to_author)?;
+                    insert_alias_stmt
+                        .execute(params![alias, author.id.raw()])
+                        .unwrap();
                     author
                 }
             };
@@ -129,9 +138,8 @@ pub fn sync_creators(
                 let name: String = row.get("name")?;
 
                 let links: String = row.get("links")?;
-                let links: Vec<Link> = serde_json
-                    ::from_str(&links)
-                    .expect("Author links is not valid JSON");
+                let links: Vec<Link> =
+                    serde_json::from_str(&links).expect("Author links is not valid JSON");
 
                 let thumb: Option<u32> = row.get("id")?;
                 let thumb: Option<FileMetaId> = thumb.map(FileMetaId::new);

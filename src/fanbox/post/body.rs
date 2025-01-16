@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use super::PostListItem;
 
-
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub struct PostBody {
@@ -20,7 +19,6 @@ pub struct PostBody {
     pub url_embed_map: Option<BTreeMap<String, PostTextEmbed>>,
 }
 
-
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum PostBlock {
@@ -33,25 +31,15 @@ pub enum PostBlock {
         styles: Option<Vec<PostBlockStyle>>,
     },
     #[serde(rename_all = "camelCase")]
-    Image {
-      image_id: String,
-    },
+    Image { image_id: String },
     #[serde(rename_all = "camelCase")]
-    File {
-      file_id: String,
-    },
+    File { file_id: String },
     #[serde(rename_all = "camelCase")]
-    Embed {
-      embed_id: String,
-    },
+    Embed { embed_id: String },
     #[serde(rename_all = "camelCase")]
-    UrlEmbed {
-      url_embed_id: String,
-    },
+    UrlEmbed { url_embed_id: String },
     #[serde(rename_all = "camelCase")]
-    Video {
-        video_id: String,
-    },
+    Video { video_id: String },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
@@ -146,10 +134,7 @@ pub enum PostTextEmbed {
     #[serde(rename = "html.card")]
     HtmlCard { id: String, html: String },
     #[serde(rename = "fanbox.post", rename_all = "camelCase")]
-    FanboxPost {
-        id: String,
-        post_info: PostListItem,
-    },
+    FanboxPost { id: String, post_info: PostListItem },
     Default {
         id: String,
         url: String,

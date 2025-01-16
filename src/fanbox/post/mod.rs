@@ -4,8 +4,8 @@ pub mod item;
 pub use super::{PostType, User};
 use chrono::{DateTime, Utc};
 
-pub use item::*;
 pub use body::*;
+pub use item::*;
 
 use serde::{Deserialize, Serialize};
 

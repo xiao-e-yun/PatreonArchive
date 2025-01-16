@@ -1,7 +1,7 @@
 pub mod save_type;
 
-use clap::{ arg, Parser };
-use clap_verbosity_flag::{ InfoLevel, Verbosity };
+use clap::{arg, Parser};
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use dotenv::dotenv;
 use save_type::SaveType;
 use std::path::PathBuf;
@@ -46,8 +46,7 @@ impl Config {
     }
     /// Create a logger with the configured verbosity level
     pub fn init_logger(&self) -> () {
-        env_logger::Builder
-            ::new()
+        env_logger::Builder::new()
             .filter_level(self.verbose.log_level_filter())
             .format_target(false)
             .init();

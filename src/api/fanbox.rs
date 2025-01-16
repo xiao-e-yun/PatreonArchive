@@ -3,9 +3,12 @@ use std::path::PathBuf;
 use log::error;
 use reqwest::header;
 use reqwest_middleware::RequestBuilder;
-use serde::{ de::DeserializeOwned, Deserialize, Serialize };
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{ config::Config, fanbox::{Creator, FollowingCreator, Post, PostListItem, SupportingCreator} };
+use crate::{
+    config::Config,
+    fanbox::{Creator, FollowingCreator, Post, PostListItem, SupportingCreator},
+};
 
 use super::ArchiveClient;
 
@@ -25,10 +28,7 @@ impl FanboxClient {
     pub fn new(config: &Config) -> Self {
         let inner = ArchiveClient::new(config);
         let session = config.session();
-        Self {
-            inner,
-            session,
-        }
+        Self { inner, session }
     }
 
     fn wrap_request(&self, builder: RequestBuilder) -> RequestBuilder {
@@ -72,43 +72,54 @@ impl FanboxClient {
         let response = request.send().await.expect("Failed to send request");
 
         let mut file = tokio::fs::File::create(path).await.unwrap();
-        self.inner.download(response, &mut file).await.expect("Failed to download file");
+        self.inner
+            .download(response, &mut file)
+            .await
+            .expect("Failed to download file");
 
         Ok(())
     }
 
     pub async fn get_supporting_creators(
-        &self
+        &self,
     ) -> Result<APIListSupportingCreator, Box<dyn std::error::Error>> {
         let url = "https://api.fanbox.cc/plan.listSupporting";
         let list: APIListSupportingCreator = self
-            .fetch(url).await
+            .fetch(url)
+            .await
             .expect("Failed to get supporting authors");
         Ok(list)
     }
 
     pub async fn get_following_creators(
-        &self
+        &self,
     ) -> Result<APIListFollowingCreator, Box<dyn std::error::Error>> {
         let url = "https://api.fanbox.cc/creator.listFollowing";
         let list: APIListFollowingCreator = self
-            .fetch(url).await
+            .fetch(url)
+            .await
             .expect("Failed to get following authors");
         Ok(list)
     }
 
     pub async fn get_posts(
         &self,
-        creator: &Creator
+        creator: &Creator,
     ) -> Result<APIListCreatorPost, Box<dyn std::error::Error>> {
-        let url = format!("https://api.fanbox.cc/post.paginateCreator?creatorId={}", creator.id());
+        let url = format!(
+            "https://api.fanbox.cc/post.paginateCreator?creatorId={}",
+            creator.id()
+        );
         let urls: APIListCreatorPaginate = self.fetch(&url).await.expect("Failed to get post list");
 
         let mut tasks = Vec::new();
         for url in urls {
             let client = self.clone();
             let future = async move {
-                client.fetch::<APIListCreatorPost>(&url).await.expect("Failed to get post")
+                client
+                    .fetch::<APIListCreatorPost>(&url)
+                    .await
+                    .expect("Failed to get post")
             };
             tasks.push(tokio::spawn(future));
         }

@@ -2,7 +2,6 @@ use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct User {

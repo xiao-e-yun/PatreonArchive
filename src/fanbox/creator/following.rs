@@ -4,7 +4,6 @@ use crate::fanbox::common::{PostType, User};
 
 use super::Creator;
 
-
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct FollowingCreator {

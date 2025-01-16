@@ -1,11 +1,14 @@
 pub mod fanbox;
 
-use std::sync::Arc;
-use reqwest::{ Client, Response };
-use reqwest_middleware::{ ClientBuilder, ClientWithMiddleware };
-use reqwest_retry::{ policies::ExponentialBackoff, RetryTransientMiddleware };
-use tokio::{ fs::File, sync::{ Semaphore, SemaphorePermit } };
 use futures::StreamExt;
+use reqwest::{Client, Response};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use std::sync::Arc;
+use tokio::{
+    fs::File,
+    sync::{Semaphore, SemaphorePermit},
+};
 
 use crate::{
     config::Config,
