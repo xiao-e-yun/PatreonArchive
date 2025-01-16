@@ -9,10 +9,10 @@ repository = "https://github.com/xiao-e-yun/FanboxArchive"
 
 
 [dependencies]
-post-archiver = { version = "0.2.0", features = ["utils"] }
+post-archiver = { version = "0.2.1", features = ["utils"] }
 # other dependencies
 chrono = { version = "0.4.38", features = ["serde"] }
-rusqlite = { version = "0.32.1", features = ["chrono"] }
+rusqlite = { version = "0.32.1", features = ["bundled", "chrono"] }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.117"
 clap = { version = "4.5.4", features = ["derive", "env"] }
