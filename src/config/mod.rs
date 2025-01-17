@@ -14,7 +14,7 @@ pub struct Config {
     #[clap(env = "FANBOXSESSID")]
     session: String,
     /// Which you path want to save
-    #[arg(short, long, default_value = "./archive", env = "OUTPUT")]
+    #[arg(default_value = "./archive", env = "OUTPUT")]
     output: PathBuf,
     /// Which you type want to save
     #[arg(short, long, default_value = "supporting", env = "SAVE")]
@@ -22,6 +22,9 @@ pub struct Config {
     /// Force download
     #[arg(short, long)]
     force: bool,
+    /// Overwrite existing files
+    #[arg(short, long)]
+    overwrite: bool,
     /// Whitelist of creator IDs
     #[arg(short, long, num_args = 0..)]
     whitelist: Vec<String>,
@@ -59,20 +62,9 @@ impl Config {
             format!("FANBOXSESSID={}", self.session)
         }
     }
-    // for robot check
-    // pub fn clearance(&self) -> String {
-    //     let clearance = self.clearance.clone().unwrap_or_default();
-    //     if clearance.starts_with("cf_clearance=") {
-    //         clearance
-    //     } else {
-    //         format!("cf_clearance={}", clearance)
-    //     }
-    // }
-    // pub fn user_agent(&self) -> String {
-    //     let default_user_agent =
-    //         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0".to_string();
-    //     self.user_agent.clone().unwrap_or(default_user_agent)
-    // }
+    pub fn overwrite(&self) -> bool {
+        self.overwrite
+    }
     pub fn accepts(&self) -> SaveType {
         self.save
     }

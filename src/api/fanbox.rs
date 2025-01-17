@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use log::error;
+use log::{error, info};
 use reqwest::header;
 use reqwest_middleware::RequestBuilder;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -22,13 +22,15 @@ pub type APIListCreatorPaginate = Vec<String>;
 pub struct FanboxClient {
     inner: ArchiveClient,
     session: String,
+    overwrite: bool,
 }
 
 impl FanboxClient {
     pub fn new(config: &Config) -> Self {
         let inner = ArchiveClient::new(config);
         let session = config.session();
-        Self { inner, session }
+        let overwrite = config.overwrite();
+        Self { inner, session, overwrite }
     }
 
     fn wrap_request(&self, builder: RequestBuilder) -> RequestBuilder {
@@ -71,11 +73,15 @@ impl FanboxClient {
         let request = self.wrap_request(request);
         let response = request.send().await.expect("Failed to send request");
 
-        let mut file = tokio::fs::File::create(path).await.unwrap();
-        self.inner
-            .download(response, &mut file)
-            .await
-            .expect("Failed to download file");
+        let skip = !self.overwrite && path.exists();
+        if skip {
+            info!("Download was skip ({})", path.display());
+        } else {
+            let mut file = tokio::fs::File::create(path).await.unwrap();
+            self.inner
+                .download(response, &mut file)
+                .await?;
+        }
 
         Ok(())
     }
