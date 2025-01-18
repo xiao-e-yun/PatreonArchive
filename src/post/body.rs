@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use log::error;
 use post_archiver::{AuthorId, Content, FileMetaId, PostId};
+use serde_json::{json, Value};
 
 use crate::{
     fanbox::{
@@ -280,7 +281,7 @@ pub struct PostFileMeta {
     pub post: PostId,
     pub url: String,
     pub mime: String,
-    pub extra: HashMap<String, String>,
+    pub extra: Value,
 }
 
 impl PostFileMeta {
@@ -289,10 +290,10 @@ impl PostFileMeta {
         let filename = image.filename();
         let url = image.url();
         let mime = image.mime();
-        let extra = HashMap::from([
-            ("width".to_string(), image.width.to_string()),
-            ("height".to_string(), image.height.to_string()),
-        ]);
+        let extra = json!({
+            "width": image.width,
+            "height": image.height,
+        });
 
         Self {
             id,
