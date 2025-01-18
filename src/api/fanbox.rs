@@ -30,7 +30,11 @@ impl FanboxClient {
         let inner = ArchiveClient::new(config);
         let session = config.session();
         let overwrite = config.overwrite();
-        Self { inner, session, overwrite }
+        Self {
+            inner,
+            session,
+            overwrite,
+        }
     }
 
     fn wrap_request(&self, builder: RequestBuilder) -> RequestBuilder {
@@ -68,20 +72,19 @@ impl FanboxClient {
     }
 
     pub async fn download(&self, url: &str, path: PathBuf) -> Result<(), reqwest::Error> {
+        if !self.overwrite && path.exists() {
+            info!("Download was skip ({})", path.display());
+            return Ok(());
+        }
+
         let (client, _semaphore) = self.inner.client().await;
         let request = client.get(url);
         let request = self.wrap_request(request);
         let response = request.send().await.expect("Failed to send request");
 
-        let skip = !self.overwrite && path.exists();
-        if skip {
-            info!("Download was skip ({})", path.display());
-        } else {
-            let mut file = tokio::fs::File::create(path).await.unwrap();
-            self.inner
-                .download(response, &mut file)
-                .await?;
-        }
+        info!("Downloading {} to {}", url, path.display());
+        let mut file = tokio::fs::File::create(path).await.unwrap();
+        self.inner.download(response, &mut file).await?;
 
         Ok(())
     }
