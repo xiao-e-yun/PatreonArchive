@@ -119,9 +119,11 @@ pub async fn sync_posts(
         post: &Post,
         tag: u32,
     ) -> Result<u32, Box<dyn std::error::Error>> {
+        let mut select_post_stmt =
+            tx.prepare_cached("SELECT id FROM posts WHERE source = ?")?;
         let mut insert_post_stmt = tx.prepare_cached("INSERT INTO posts (author,source,title,content,updated,published) VALUES (?,?,?,?,?,?) RETURNING id")?;
         let mut insert_tag_stmt =
-            tx.prepare_cached("INSERT INTO post_tags (post,tag) VALUES (?,?)")?;
+            tx.prepare_cached("INSERT OR IGNORE INTO post_tags (post,tag) VALUES (?,?)")?;
 
         let source = get_source_link(&post.creator(), &post.id());
         let title = post.title();
@@ -129,12 +131,18 @@ pub async fn sync_posts(
         let updated = post.updated_datetime;
         let published = post.published_datetime;
 
-        let post_id: u32 = insert_post_stmt
-            .query_row(
-                params![author, source, title, content, updated, published],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let post_id: u32 = select_post_stmt
+            .query_row(params![source], |row| row.get(0))
+            .optional()
+            .unwrap()
+            .unwrap_or_else(|| {
+                insert_post_stmt
+                    .query_row(
+                        params![author, source, title, content, updated, published],
+                        |row| row.get(0),
+                    )
+                    .unwrap()
+            });
         insert_tag_stmt.execute(params![post_id, tag]).unwrap();
 
         Ok(post_id)
