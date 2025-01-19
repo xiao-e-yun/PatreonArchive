@@ -52,6 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("");
     }
 
+    info!("All done!");
     Ok(())
 }
 
