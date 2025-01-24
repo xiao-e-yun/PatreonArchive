@@ -21,6 +21,15 @@ pub struct FollowingCreator {
     has_booth_shop: bool,
 }
 
+impl FollowingCreator {
+    pub fn name(&self) -> &str {
+        &self.user.name
+    }
+    pub fn creator_id(&self) -> &str {
+        &self.creator_id
+    }
+}
+
 impl From<FollowingCreator> for Creator {
     fn from(creator: FollowingCreator) -> Self {
         Creator {

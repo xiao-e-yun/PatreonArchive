@@ -217,6 +217,12 @@ impl PostEmbed {
                     get_source_link(&creator, &post)
                 )
             }
+            "twitter" => {
+                format!(
+                    "[Tweet](https://twitter.com/i/web/status/{})",
+                    self.content_id
+                )
+            }
             provider => {
                 error!("Unknown embed provider ({})", provider);
                 error!("id: {}", self.id);
@@ -260,6 +266,13 @@ impl PostTextEmbed {
                     "[Fanbox Post {}]({})",
                     post_info.title,
                     get_source_link(&post_info.creator_id, &post_info.id)
+                )
+            }
+            PostTextEmbed::FanboxCreator { id: _, profile } => {
+                format!(
+                    "[Creator {}](https://{}.fanbox.cc)",
+                    profile.name(),
+                    profile.creator_id()
                 )
             }
             PostTextEmbed::Default {
