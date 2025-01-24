@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use post_archiver::utils::get_mime;
 use serde::{Deserialize, Serialize};
 
+use super::super::FollowingCreator;
 use super::PostListItem;
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
@@ -135,6 +136,11 @@ pub enum PostTextEmbed {
     HtmlCard { id: String, html: String },
     #[serde(rename = "fanbox.post", rename_all = "camelCase")]
     FanboxPost { id: String, post_info: PostListItem },
+    #[serde(rename = "fanbox.creator")]
+    FanboxCreator {
+        id: String,
+        profile: FollowingCreator,
+    },
     Default {
         id: String,
         url: String,
