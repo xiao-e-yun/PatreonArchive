@@ -90,9 +90,12 @@ pub async fn sync_posts(
         info!("{} failed", total_posts - synced_posts);
     }
 
-    info!("downloading {} files", all_files.len());
-    let client = FanboxClient::new(&config);
-    download_files(all_files, client, config.output()).await?;
+    if !all_files.is_empty() {
+        info!("");
+        info!("Downloading {} files", all_files.len());
+        let client = FanboxClient::new(&config);
+        download_files(all_files, client, config.output()).await?;
+    }
     tx.commit()?;
 
     fn sync_post(
@@ -211,6 +214,11 @@ async fn download_files(
     let mut last_folder = PathBuf::new();
     for file in files {
         let path = output.join(&file.path);
+
+        if !client.overwrite() && path.exists() {
+            info!("Download was skip ({})", path.display());
+            continue;
+        }
 
         // Create folder if it doesn't exist
         let folder = path.parent().unwrap();

@@ -146,6 +146,10 @@ impl FanboxClient {
         let post: APIPost = self.fetch(&url).await.expect("Failed to get post");
         Ok(post)
     }
+
+    pub fn overwrite(&self) -> bool {
+        self.overwrite
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
