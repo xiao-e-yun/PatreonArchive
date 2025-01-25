@@ -61,9 +61,9 @@ pub async fn get_posts(
 pub async fn sync_posts(
     conn: &mut Connection,
     config: &Config,
-    tag: u32,
     creator: &SyncedCreator,
     posts: Vec<Post>,
+    fanbox_and_free_tag: (u32, u32),
 ) -> Result<(), Box<dyn std::error::Error>> {
     let total_posts = posts.len();
     let mut synced_posts = 0;
@@ -73,7 +73,7 @@ pub async fn sync_posts(
     let mut tx = conn.transaction()?;
     for post in posts {
         info!(" syncing {}", post.title());
-        match sync_post(&mut tx, author, tag, post) {
+        match sync_post(&mut tx, author, post, fanbox_and_free_tag) {
             Ok(files) => {
                 synced_posts += 1;
                 if !files.is_empty() {
@@ -101,10 +101,10 @@ pub async fn sync_posts(
     fn sync_post(
         tx: &mut Transaction,
         author: u32,
-        tag: u32,
         post: Post,
+        fanbox_and_free_tag: (u32, u32),
     ) -> Result<Vec<SyncedFile>, Box<dyn std::error::Error>> {
-        let post_id = sync_post_meta(tx, author, &post, tag)?;
+        let post_id = sync_post_meta(tx, author, &post, fanbox_and_free_tag)?;
         let body = post.body();
         let files = sync_files(tx, &body, author, post_id)?;
         let mapped = files
@@ -120,10 +120,9 @@ pub async fn sync_posts(
         tx: &mut Transaction,
         author: u32,
         post: &Post,
-        tag: u32,
+        (fanbox_tag, free_tag): (u32, u32),
     ) -> Result<u32, Box<dyn std::error::Error>> {
-        let mut select_post_stmt =
-            tx.prepare_cached("SELECT id FROM posts WHERE source = ?")?;
+        let mut select_post_stmt = tx.prepare_cached("SELECT id FROM posts WHERE source = ?")?;
         let mut insert_post_stmt = tx.prepare_cached("INSERT INTO posts (author,source,title,content,updated,published) VALUES (?,?,?,?,?,?) RETURNING id")?;
         let mut insert_tag_stmt =
             tx.prepare_cached("INSERT OR IGNORE INTO post_tags (post,tag) VALUES (?,?)")?;
@@ -146,7 +145,14 @@ pub async fn sync_posts(
                     )
                     .unwrap()
             });
-        insert_tag_stmt.execute(params![post_id, tag]).unwrap();
+        insert_tag_stmt
+            .execute(params![post_id, fanbox_tag])
+            .unwrap();
+        if post.fee_required == 0 {
+            insert_tag_stmt
+                .execute(params![post_id, free_tag])
+                .unwrap();
+        }
 
         Ok(post_id)
     }
@@ -240,11 +246,9 @@ async fn download_files(
     Ok(())
 }
 
-pub fn get_or_insert_tag(conn: &mut Connection) -> Result<u32, rusqlite::Error> {
-    const TAG_NAME: &str = "fanbox";
-
+pub fn get_or_insert_free_tag(conn: &mut Connection, name: &str) -> Result<u32, rusqlite::Error> {
     match conn
-        .query_row("SELECT id FROM tags WHERE name = ?", [TAG_NAME], |row| {
+        .query_row("SELECT id FROM tags WHERE name = ?", [name], |row| {
             row.get(0)
         })
         .optional()?
@@ -252,7 +256,7 @@ pub fn get_or_insert_tag(conn: &mut Connection) -> Result<u32, rusqlite::Error> 
         Some(id) => Ok(id),
         None => conn.query_row(
             "INSERT INTO tags (name) VALUES (?) RETURNING id",
-            [TAG_NAME],
+            [name],
             |row| row.get(0),
         ),
     }
