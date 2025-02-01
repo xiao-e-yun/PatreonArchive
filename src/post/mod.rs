@@ -254,7 +254,7 @@ async fn download_files(
     Ok(())
 }
 
-pub fn get_or_insert_free_tag(conn: &mut Connection, name: &str) -> Result<u32, rusqlite::Error> {
+pub fn get_or_insert_tag(conn: &mut Connection, name: &str) -> Result<u32, rusqlite::Error> {
     match conn
         .query_row("SELECT id FROM tags WHERE name = ?", [name], |row| {
             row.get(0)

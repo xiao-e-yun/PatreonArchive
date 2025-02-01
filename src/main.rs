@@ -10,7 +10,7 @@ use std::error::Error;
 use config::Config;
 use creator::{display_creators, get_creators, sync_creators};
 use log::info;
-use post::{filter_unsynced_posts, get_or_insert_free_tag, get_post_urls, get_posts, sync_posts};
+use post::{filter_unsynced_posts, get_or_insert_tag, get_post_urls, get_posts, sync_posts};
 use rusqlite::Connection;
 
 #[tokio::main]
@@ -30,8 +30,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let creators = sync_creators(&mut conn, creators)?;
 
     info!("Loading Creators Post");
-    let fanbox_tag = get_or_insert_free_tag(&mut conn,"fanbox")?;
-    let free_tag = get_or_insert_free_tag(&mut conn,"free")?;
+    let fanbox_tag = get_or_insert_tag(&mut conn,"fanbox")?;
+    let free_tag = get_or_insert_tag(&mut conn,"free")?;
     for creator in creators {
         info!("{}", creator.id());
         let posts = get_post_urls(&config, creator.creator()).await?;
