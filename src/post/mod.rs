@@ -133,6 +133,8 @@ pub async fn sync_posts(
         (fanbox_tag, free_tag): (u32, u32),
     ) -> Result<u32, Box<dyn std::error::Error>> {
         let mut select_post_stmt = tx.prepare_cached("SELECT id FROM posts WHERE source = ?")?;
+        let mut update_post_stmt =
+            tx.prepare_cached("UPDATE posts SET updated = ? WHERE id = ?")?;
         let mut insert_post_stmt = tx.prepare_cached("INSERT INTO posts (author,source,title,content,updated,published) VALUES (?,?,?,?,?,?) RETURNING id")?;
         let mut insert_tag_stmt =
             tx.prepare_cached("INSERT OR IGNORE INTO post_tags (post,tag) VALUES (?,?)")?;
@@ -143,18 +145,23 @@ pub async fn sync_posts(
         let updated = post.updated_datetime;
         let published = post.published_datetime;
 
-        let post_id: u32 = select_post_stmt
+        let post_id: u32 = match select_post_stmt
             .query_row(params![source], |row| row.get(0))
             .optional()
             .unwrap()
-            .unwrap_or_else(|| {
-                insert_post_stmt
-                    .query_row(
-                        params![author, source, title, content, updated, published],
-                        |row| row.get(0),
-                    )
-                    .unwrap()
-            });
+        {
+            Some(id) => {
+                update_post_stmt.execute(params![updated, id]).unwrap();
+                id
+            }
+            None => insert_post_stmt
+                .query_row(
+                    params![author, source, title, content, updated, published],
+                    |row| row.get(0),
+                )
+                .unwrap(),
+        };
+
         insert_tag_stmt
             .execute(params![post_id, fanbox_tag])
             .unwrap();
