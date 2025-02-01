@@ -93,7 +93,7 @@ pub fn sync_creators(
             let link = || Link::new("fanbox", &format!("https://{}.fanbox.cc/", creator.id()));
 
             let author = match get_alias_stmt
-                .query_row([&alias], |row| row.get::<_, u32>(0))
+                .query_row([&alias], |row| row.get::<_, AuthorId>(0))
                 .optional()?
             {
                 Some(id) => {
@@ -109,7 +109,7 @@ pub fn sync_creators(
                         links.push(link);
                         links.sort();
                         let links = serde_json::to_string(&links)?;
-                        update_author_stmt.execute(params![links, author.id.raw()])?;
+                        update_author_stmt.execute(params![links, author.id])?;
                     }
 
                     author
@@ -126,7 +126,7 @@ pub fn sync_creators(
                     let author =
                         insert_author_stmt.query_row(params![name, links], row_to_author)?;
                     insert_alias_stmt
-                        .execute(params![alias, author.id.raw()])
+                        .execute(params![alias, author.id])
                         .unwrap();
                     author
                 }
@@ -141,8 +141,7 @@ pub fn sync_creators(
                 let links: Vec<Link> =
                     serde_json::from_str(&links).expect("Author links is not valid JSON");
 
-                let thumb: Option<u32> = row.get("id")?;
-                let thumb: Option<FileMetaId> = thumb.map(FileMetaId::new);
+                let thumb: Option<FileMetaId> = row.get("id")?;
 
                 let updated: DateTime<Utc> = row.get("updated")?;
 

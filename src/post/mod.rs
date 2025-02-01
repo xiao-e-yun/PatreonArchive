@@ -11,7 +11,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use futures::future::join_all;
 use log::{error, info};
-use post_archiver::{AuthorId, Content, PostId};
+use post_archiver::{AuthorId, Content, FileMetaId, PostId, PostTagId};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 pub async fn get_post_urls(
@@ -73,13 +73,13 @@ pub async fn sync_posts(
     config: &Config,
     creator: &SyncedCreator,
     posts: Vec<Post>,
-    fanbox_and_free_tag: (u32, u32),
+    fanbox_and_free_tag: (PostTagId, PostTagId),
 ) -> Result<(), Box<dyn std::error::Error>> {
     let total_posts = posts.len();
     let mut synced_posts = 0;
 
     let mut all_files = vec![];
-    let author = creator.author().id.raw();
+    let author = creator.author().id;
     let mut tx = conn.transaction()?;
     for post in posts {
         info!(" syncing {}", post.title());
@@ -110,9 +110,9 @@ pub async fn sync_posts(
 
     fn sync_post(
         tx: &mut Transaction,
-        author: u32,
+        author: AuthorId,
         post: Post,
-        fanbox_and_free_tag: (u32, u32),
+        fanbox_and_free_tag: (PostTagId, PostTagId),
     ) -> Result<Vec<SyncedFile>, Box<dyn std::error::Error>> {
         let post_id = sync_post_meta(tx, author, &post, fanbox_and_free_tag)?;
         let body = post.body();
@@ -128,10 +128,10 @@ pub async fn sync_posts(
 
     fn sync_post_meta(
         tx: &mut Transaction,
-        author: u32,
+        author: AuthorId,
         post: &Post,
-        (fanbox_tag, free_tag): (u32, u32),
-    ) -> Result<u32, Box<dyn std::error::Error>> {
+        (fanbox_tag, free_tag): (PostTagId, PostTagId),
+    ) -> Result<PostId, Box<dyn std::error::Error>> {
         let mut select_post_stmt = tx.prepare_cached("SELECT id FROM posts WHERE source = ?")?;
         let mut update_post_stmt =
             tx.prepare_cached("UPDATE posts SET updated = ? WHERE id = ?")?;
@@ -145,7 +145,7 @@ pub async fn sync_posts(
         let updated = post.updated_datetime;
         let published = post.published_datetime;
 
-        let post_id: u32 = match select_post_stmt
+        let post_id: PostId = match select_post_stmt
             .query_row(params![source], |row| row.get(0))
             .optional()
             .unwrap()
@@ -174,7 +174,7 @@ pub async fn sync_posts(
 
     fn sync_post_content(
         tx: &mut Transaction,
-        post_id: u32,
+        post_id: PostId,
         content: Vec<Content>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut insert_post_stmt =
@@ -189,8 +189,8 @@ pub async fn sync_posts(
 fn sync_files(
     tx: &mut Transaction,
     post_body: &PostBody,
-    author: u32,
-    post: u32,
+    author: AuthorId,
+    post: PostId,
 ) -> Result<Vec<SyncedFile>, Box<dyn std::error::Error>> {
     let mut insert_file_stmt = tx.prepare_cached(
         "INSERT INTO file_metas (filename,author,post,mime,extra) VALUES (?,?,?,?,?) RETURNING id",
@@ -198,12 +198,12 @@ fn sync_files(
     let files = post_body.files(AuthorId::from(author), PostId::from(post));
     let mut collect = vec![];
     for file in files {
-        let id: u32 = insert_file_stmt
+        let id: FileMetaId = insert_file_stmt
             .query_row(
                 params![
                     &file.filename,
-                    file.author.raw(),
-                    file.post.raw(),
+                    file.author,
+                    file.post,
                     &file.mime,
                     serde_json::to_string(&file.extra).unwrap(),
                 ],
@@ -261,7 +261,7 @@ async fn download_files(
     Ok(())
 }
 
-pub fn get_or_insert_tag(conn: &mut Connection, name: &str) -> Result<u32, rusqlite::Error> {
+pub fn get_or_insert_tag(conn: &mut Connection, name: &str) -> Result<PostTagId, rusqlite::Error> {
     match conn
         .query_row("SELECT id FROM tags WHERE name = ?", [name], |row| {
             row.get(0)
@@ -286,5 +286,5 @@ pub struct SyncedFile {
     pub path: PathBuf,
     pub url: String,
     pub raw_id: String,
-    pub id: u32,
+    pub id: FileMetaId,
 }
