@@ -8,10 +8,11 @@ use crate::{
     creator::SyncedCreator,
     fanbox::{Creator, Post, PostBody, PostListItem},
 };
+use chrono::{DateTime, Utc};
 use futures::future::join_all;
 use log::{error, info};
 use post_archiver::{AuthorId, Content, PostId};
-use rusqlite::{params, Connection, OptionalExtension, ToSql, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 pub async fn get_post_urls(
     config: &Config,
@@ -27,11 +28,20 @@ pub fn filter_unsynced_posts(
     conn: &mut Connection,
     mut posts: Vec<PostListItem>,
 ) -> Result<Vec<PostListItem>, rusqlite::Error> {
-    let mut stmt = conn.prepare("SELECT id FROM posts WHERE source = ? AND updated != ?")?;
+    let mut stmt = conn.prepare("SELECT updated FROM posts WHERE source = ?")?;
     posts.retain(|post| {
         let source = get_source_link(&post.creator_id, &post.id);
-        let updated = post.updated_datetime.to_sql().unwrap();
-        !stmt.exists(params![source, updated]).unwrap()
+        let updated = post.updated_datetime;
+
+        let post_updated: Option<DateTime<Utc>> = stmt
+            .query_row(params![source], |row| row.get(0))
+            .optional()
+            .unwrap();
+
+        match post_updated {
+            Some(post_updated) => post_updated < updated,
+            None => false,
+        }
     });
     Ok(posts)
 }
@@ -129,7 +139,7 @@ pub async fn sync_posts(
 
         let source = get_source_link(&post.creator(), &post.id());
         let title = post.title();
-        let content = "UNSYNCED".to_string();
+        let content = "[\"UNSYNCED\"]".to_string();
         let updated = post.updated_datetime;
         let published = post.published_datetime;
 
@@ -149,9 +159,7 @@ pub async fn sync_posts(
             .execute(params![post_id, fanbox_tag])
             .unwrap();
         if post.fee_required == 0 {
-            insert_tag_stmt
-                .execute(params![post_id, free_tag])
-                .unwrap();
+            insert_tag_stmt.execute(params![post_id, free_tag]).unwrap();
         }
 
         Ok(post_id)
