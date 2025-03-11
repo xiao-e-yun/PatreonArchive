@@ -373,6 +373,7 @@ dependencies = [
  "env_logger",
  "futures",
  "log",
+ "mime_guess",
  "post-archiver",
  "reqwest",
  "reqwest-middleware",

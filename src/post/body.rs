@@ -1,70 +1,14 @@
 use std::collections::HashMap;
 
 use log::error;
-use post_archiver::{AuthorId, Content, FileMetaId, PostId};
-use serde_json::{json, Value};
+use post_archiver::{Content, FileMetaId};
 
 use crate::{
-    fanbox::{
-        PostBlock, PostBlockStyle, PostBody, PostEmbed, PostFile, PostImage, PostTextEmbed,
-        PostVideo,
-    },
+    fanbox::{PostBlock, PostBlockStyle, PostBody, PostEmbed, PostTextEmbed, PostVideo},
     post::get_source_link,
 };
 
 impl PostBody {
-    pub fn files(&self, author: AuthorId, post: PostId) -> Vec<PostFileMeta> {
-        let mut files: Vec<PostFileMeta> = vec![];
-
-        if let Some(list) = self.images.clone() {
-            files.extend(post_images_to_files(list, author, post));
-        }
-
-        if let Some(map) = self.image_map.clone() {
-            files.extend(post_images_to_files(
-                map.into_values().collect(),
-                author,
-                post,
-            ));
-        };
-
-        if let Some(list) = self.files.clone() {
-            files.extend(psot_files_to_files(list, author, post));
-        }
-
-        if let Some(map) = self.file_map.clone() {
-            files.extend(psot_files_to_files(
-                map.into_values().collect(),
-                author,
-                post,
-            ));
-        };
-
-        // util function
-        fn post_images_to_files(
-            images: Vec<PostImage>,
-            author: AuthorId,
-            post: PostId,
-        ) -> Vec<PostFileMeta> {
-            images
-                .into_iter()
-                .map(|image| PostFileMeta::from_image(image, author, post))
-                .collect()
-        }
-
-        fn psot_files_to_files(
-            files: Vec<PostFile>,
-            author: AuthorId,
-            post: PostId,
-        ) -> Vec<PostFileMeta> {
-            files
-                .into_iter()
-                .map(|file| PostFileMeta::from_file(file, author, post))
-                .collect()
-        }
-
-        files
-    }
     pub fn content(&self, files: &HashMap<String, FileMetaId>) -> Vec<Content> {
         let mut content = self.text(files);
 
@@ -282,56 +226,6 @@ impl PostTextEmbed {
             } => {
                 format!("[{}]({})", url, url)
             }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct PostFileMeta {
-    pub id: String,
-    pub filename: String,
-    pub author: AuthorId,
-    pub post: PostId,
-    pub url: String,
-    pub mime: String,
-    pub extra: Value,
-}
-
-impl PostFileMeta {
-    pub fn from_image(image: PostImage, author: AuthorId, post: PostId) -> Self {
-        let id = image.id();
-        let filename = image.filename();
-        let url = image.url();
-        let mime = image.mime();
-        let extra = json!({
-            "width": image.width,
-            "height": image.height,
-        });
-
-        Self {
-            id,
-            filename,
-            author,
-            post,
-            url,
-            mime,
-            extra,
-        }
-    }
-    pub fn from_file(file: PostFile, author: AuthorId, post: PostId) -> Self {
-        let id = file.id();
-        let filename = file.filename();
-        let url = file.url();
-        let mime = file.mime();
-
-        Self {
-            id,
-            filename,
-            author,
-            post,
-            url,
-            mime,
-            extra: Default::default(),
         }
     }
 }

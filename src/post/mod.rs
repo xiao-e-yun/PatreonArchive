@@ -1,17 +1,16 @@
 mod body;
-
-use std::path::PathBuf;
+pub mod file;
 
 use crate::{
     api::fanbox::FanboxClient,
     config::Config,
     creator::SyncedCreator,
-    fanbox::{Creator, Post, PostBody, PostListItem},
+    fanbox::{Creator, Post, PostListItem},
 };
 use chrono::{DateTime, Utc};
-use futures::future::join_all;
+use file::{download_files, get_files, sync_files, SyncedFile};
 use log::{error, info};
-use post_archiver::{AuthorId, Content, FileMetaId, PostId, PostTagId};
+use post_archiver::{AuthorId, Content, PostId, PostTagId};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 pub async fn get_post_urls(
@@ -116,12 +115,16 @@ pub async fn sync_posts(
     ) -> Result<Vec<SyncedFile>, Box<dyn std::error::Error>> {
         let post_id = sync_post_meta(tx, author, &post, fanbox_and_free_tag)?;
         let body = post.body();
-        let files = sync_files(tx, &body, author, post_id)?;
-        let mapped = files
+
+        let cover_url = post.cover_image_url.as_ref();
+        let files = get_files(cover_url, &body, author, post_id);
+        let files = sync_files(tx, files)?;
+
+        let files_map = files
             .iter()
             .map(|file| (file.raw_id.clone(), file.id.into()))
             .collect();
-        sync_post_content(tx, post_id, body.content(&mapped))?;
+        sync_post_content(tx, post_id, body.content(&files_map))?;
         info!(" + {} files", files.len());
         Ok(files)
     }
@@ -186,81 +189,6 @@ pub async fn sync_posts(
     Ok(())
 }
 
-fn sync_files(
-    tx: &mut Transaction,
-    post_body: &PostBody,
-    author: AuthorId,
-    post: PostId,
-) -> Result<Vec<SyncedFile>, Box<dyn std::error::Error>> {
-    let mut insert_file_stmt = tx.prepare_cached(
-        "INSERT INTO file_metas (filename,author,post,mime,extra) VALUES (?,?,?,?,?) RETURNING id",
-    )?;
-    let files = post_body.files(AuthorId::from(author), PostId::from(post));
-    let mut collect = vec![];
-    for file in files {
-        let id: FileMetaId = insert_file_stmt
-            .query_row(
-                params![
-                    &file.filename,
-                    file.author,
-                    file.post,
-                    &file.mime,
-                    serde_json::to_string(&file.extra).unwrap(),
-                ],
-                |row| row.get(0),
-            )
-            .unwrap();
-
-        let path = PathBuf::from(file.author.to_string())
-            .join(file.post.to_string())
-            .join(&file.filename);
-        let url = file.url.clone();
-        collect.push(SyncedFile {
-            id,
-            path,
-            url,
-            raw_id: file.id,
-        });
-    }
-    Ok(collect)
-}
-
-async fn download_files(
-    files: Vec<SyncedFile>,
-    client: FanboxClient,
-    output: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut tasks = vec![];
-
-    let mut last_folder = PathBuf::new();
-    for file in files {
-        let path = output.join(&file.path);
-
-        if !client.overwrite() && path.exists() {
-            info!("Download was skip ({})", path.display());
-            continue;
-        }
-
-        // Create folder if it doesn't exist
-        let folder = path.parent().unwrap();
-        if last_folder != folder {
-            last_folder = folder.to_path_buf();
-            tokio::fs::create_dir_all(folder).await?;
-        }
-
-        let client = client.clone();
-        tasks.push(tokio::spawn(async move {
-            client
-                .download(&file.url, path)
-                .await
-                .expect("Failed to download file");
-        }));
-    }
-
-    join_all(tasks).await;
-    Ok(())
-}
-
 pub fn get_or_insert_tag(conn: &mut Connection, name: &str) -> Result<PostTagId, rusqlite::Error> {
     match conn
         .query_row("SELECT id FROM tags WHERE name = ?", [name], |row| {
@@ -279,12 +207,4 @@ pub fn get_or_insert_tag(conn: &mut Connection, name: &str) -> Result<PostTagId,
 
 pub fn get_source_link(creator_id: &str, post_id: &str) -> String {
     format!("https://{}.fanbox.cc/posts/{}", creator_id, post_id)
-}
-
-#[derive(Debug)]
-pub struct SyncedFile {
-    pub path: PathBuf,
-    pub url: String,
-    pub raw_id: String,
-    pub id: FileMetaId,
 }
