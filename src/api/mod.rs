@@ -35,10 +35,10 @@ impl ArchiveClient {
     }
     fn client_without_semaphore(&self) -> ClientWithMiddleware {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(RETRY_LIMIT);
-        let client = ClientBuilder::new(self.client.clone())
+        
+        ClientBuilder::new(self.client.clone())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build();
-        client
+            .build()
     }
 
     async fn download(&self, response: Response, file: &mut File) -> Result<(), reqwest::Error> {

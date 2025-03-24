@@ -17,7 +17,7 @@ pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error
     }
     info!("");
 
-    let client = FanboxClient::new(&config);
+    let client = FanboxClient::new(config);
     let mut creators: HashSet<Creator> = HashSet::new();
     info!("Checking creators");
     if accepts.accept_following() {
@@ -35,7 +35,7 @@ pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error
 
     let total = creators.len();
     info!("Total: {} creators", total);
-    creators.retain(|c| config.filter_creator(&c));
+    creators.retain(|c| config.filter_creator(c));
     let filtered = creators.len();
     info!("Excluded: {} creators", total - filtered);
     info!("Filtered: {} creators", filtered);
@@ -43,9 +43,9 @@ pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error
     Ok(creators.into_iter().collect())
 }
 
-pub fn display_creators(creators: &Vec<Creator>) {
+pub fn display_creators(creators: &[Creator]) {
     if log::log_enabled!(log::Level::Info) {
-        let mut creators = creators.clone();
+        let mut creators = creators.to_vec();
         creators.sort_by(|a, b| a.creator_id.cmp(&b.creator_id));
 
         let (mut id_width, mut fee_width) = (11_usize, 5_usize);
@@ -82,7 +82,10 @@ pub fn sync_creators(
 
     for creator in creators.into_iter() {
         let alias = format!("fanbox:{}", creator.creator_id);
-        let link = Link::new("fanbox", &format!("https://{}.fanbox.cc/", creator.creator_id));
+        let link = Link::new(
+            "fanbox",
+            &format!("https://{}.fanbox.cc/", creator.creator_id),
+        );
         let (author, _) = UnsyncAuthor::new(creator.name.to_string())
             .alias(vec![alias])
             .links(vec![link])

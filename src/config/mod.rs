@@ -48,7 +48,7 @@ impl Config {
         <Self as Parser>::parse()
     }
     /// Create a logger with the configured verbosity level
-    pub fn init_logger(&self) -> () {
+    pub fn init_logger(&self) {
         env_logger::Builder::new()
             .filter_level(self.verbose.log_level_filter())
             .format_target(false)

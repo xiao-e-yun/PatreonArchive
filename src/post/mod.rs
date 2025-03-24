@@ -26,7 +26,7 @@ pub async fn get_post_urls(
     config: &Config,
     creator_id: &str,
 ) -> Result<Vec<PostListItem>, Box<dyn std::error::Error>> {
-    let client = FanboxClient::new(&config);
+    let client = FanboxClient::new(config);
     let mut items = client.get_posts(creator_id).await?;
     items.retain(|item| config.filter_post(item));
     Ok(items)
@@ -52,7 +52,7 @@ pub async fn get_posts(
     config: &Config,
     posts: Vec<PostListItem>,
 ) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
-    let client = FanboxClient::new(&config);
+    let client = FanboxClient::new(config);
     let mut tasks = vec![];
     for post in posts {
         let client = client.clone();
@@ -107,7 +107,7 @@ pub async fn sync_posts(
 
     }
 
-    let client = FanboxClient::new(&config);
+    let client = FanboxClient::new(config);
     download_files(post_files, &client).await?;
 
     importer.commit()?;

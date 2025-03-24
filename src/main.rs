@@ -22,10 +22,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     if !config.output().exists() {
         info!("Creating output folder");
-        std::fs::create_dir_all(&config.output())?;
+        std::fs::create_dir_all(config.output())?;
     }
 
-    let mut importer = PostArchiverImporter::open_or_create(&config.output())?;
+    let mut importer = PostArchiverImporter::open_or_create(config.output())?;
 
     info!("Loading Creator List");
     let creators = get_creators(&config).await?;

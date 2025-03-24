@@ -4,9 +4,11 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, ValueEnum, PartialEq, Eq)]
+#[derive(Default)]
 pub enum SaveType {
     All,
     Following,
+    #[default]
     Supporting,
 }
 
@@ -29,11 +31,6 @@ impl SaveType {
     }
 }
 
-impl Default for SaveType {
-    fn default() -> Self {
-        SaveType::Supporting
-    }
-}
 
 impl fmt::Display for SaveType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

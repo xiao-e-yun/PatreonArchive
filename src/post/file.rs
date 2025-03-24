@@ -53,7 +53,7 @@ where
 
 impl FanboxFileMeta for UnsyncFileMeta {
     fn from_url(url: String) -> Self {
-        let filename = url.split('/').last().unwrap().to_string();
+        let filename = url.split('/').next_back().unwrap().to_string();
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
@@ -122,14 +122,14 @@ impl PostBody {
         fn post_images_to_files(images: Vec<PostImage>) -> Vec<UnsyncFileMeta> {
             images
                 .into_iter()
-                .map(|image| UnsyncFileMeta::from_image(image))
+                .map(UnsyncFileMeta::from_image)
                 .collect()
         }
 
         fn psot_files_to_files(files: Vec<PostFile>) -> Vec<UnsyncFileMeta> {
             files
                 .into_iter()
-                .map(|file| UnsyncFileMeta::from_file(file))
+                .map(UnsyncFileMeta::from_file)
                 .collect()
         }
 
