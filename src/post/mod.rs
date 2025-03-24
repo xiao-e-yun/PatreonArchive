@@ -8,7 +8,6 @@ use crate::{
     config::Config,
     fanbox::{Post, PostListItem},
 };
-use chrono::{DateTime, Utc};
 use file::{download_files, FanboxFileMeta};
 use log::{debug, error, info};
 use post_archiver::{
@@ -41,8 +40,6 @@ pub fn filter_unsynced_posts(
         let post_updated = importer
             .check_post_with_updated(&source, &post.updated_datetime)
             .expect("Failed to check post");
-        info!("{:?} {:?}",importer.check_post(&source) ,post_updated);
-        info!("{:?} {:?}",importer.conn.connection().query_row("SELECT updated FROM posts WHERE source = ?", [&source], |row|row.get::<_,DateTime<Utc>>(0)),post.updated_datetime);
         post_updated.is_none()
     });
     Ok(posts)
@@ -82,7 +79,6 @@ pub async fn sync_posts(
     let mut synced_posts = 0;
     let mut post_files = vec![];
     for post in posts {
-
         info!(" syncing {}", post.title);
         match sync_post(&importer, author, post) {
             Ok(files) => {
@@ -104,7 +100,6 @@ pub async fn sync_posts(
             }
             Err(e) => error!(" + failed: {}", e),
         }
-
     }
 
     let client = FanboxClient::new(config);
