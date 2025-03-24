@@ -1153,14 +1153,14 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 
 [[package]]
 name = "post-archiver"
-version = "0.2.4"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aca56befd166722900989ec633c49ef17869ffeae693764161e02949b5c06190"
+checksum = "fae40ec4da61767159d57f5bbb81e84649c4719829ada55853f69f5025113603"
 dependencies = [
  "chrono",
- "mime_guess",
  "rusqlite",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

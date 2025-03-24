@@ -77,10 +77,10 @@ impl Config {
     }
 
     pub fn filter_creator(&self, creator: &Creator) -> bool {
-        let creator_id = creator.id().to_string();
+        let creator_id = creator.creator_id.to_string();
         let mut accept = true;
 
-        accept &= !(self.skip_free && creator.fee() == 0);
+        accept &= !(self.skip_free && creator.fee == 0);
         accept &= self.whitelist.is_empty() || self.whitelist.contains(&creator_id);
         accept &= !self.blacklist.contains(&creator_id);
 

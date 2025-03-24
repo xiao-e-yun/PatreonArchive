@@ -17,18 +17,6 @@ pub struct Creator {
     pub fee: u32,
 }
 
-impl Creator {
-    pub fn user(&self) -> &User {
-        &self.user
-    }
-    pub fn fee(&self) -> u32 {
-        self.fee
-    }
-    pub fn id(&self) -> &String {
-        &self.creator_id
-    }
-}
-
 impl Deref for Creator {
     type Target = User;
 

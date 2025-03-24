@@ -10,8 +10,8 @@ use std::error::Error;
 use config::Config;
 use creator::{display_creators, get_creators, sync_creators};
 use log::info;
-use post::{filter_unsynced_posts, get_or_insert_tag, get_post_urls, get_posts, sync_posts};
-use rusqlite::Connection;
+use post::{filter_unsynced_posts, get_post_urls, get_posts, sync_posts};
+use post_archiver::importer::PostArchiverImporter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,34 +20,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("# Fanbox Archive #");
     info!("");
 
-    let mut conn = create_connection(&config)?;
+    if !config.output().exists() {
+        info!("Creating output folder");
+        std::fs::create_dir_all(&config.output())?;
+    }
+
+    let mut importer = PostArchiverImporter::open_or_create(&config.output())?;
 
     info!("Loading Creator List");
     let creators = get_creators(&config).await?;
     display_creators(&creators);
 
     info!("Syncing Creator List");
-    let creators = sync_creators(&mut conn, creators)?;
+    let authors = sync_creators(&mut importer, creators)?;
 
     info!("Loading Creators Post");
-    let fanbox_tag = get_or_insert_tag(&mut conn,"fanbox")?;
-    let free_tag = get_or_insert_tag(&mut conn,"free")?;
-    for creator in creators {
-        info!("{}", creator.id());
-        let posts = get_post_urls(&config, creator.creator()).await?;
-        let posts = if config.force() {
-            info!("{} posts", posts.len());
-            posts
-        } else {
-            let total_post = posts.len();
-            let posts: Vec<fanbox::PostListItem> = filter_unsynced_posts(&mut conn, posts)?;
-            info!("{} posts, {} unsynced", total_post, posts.len());
-            posts
+    for (author, creator_id) in authors {
+        info!("{}", &author.name);
+        let mut posts = get_post_urls(&config, &creator_id).await?;
+
+        let total_post = posts.len();
+        let mut posts_count_info = format!("{} posts", total_post);
+        if !config.force() {
+            posts = filter_unsynced_posts(&mut importer, posts)?;
+            posts_count_info += &format!(" ({} unsynced)", posts.len());
         };
+        info!(" + {}", posts_count_info);
 
         let posts = get_posts(&config, posts).await?;
         if !posts.is_empty() {
-            sync_posts(&mut conn, &config, &creator, posts, (fanbox_tag,free_tag)).await?;
+            sync_posts(&mut importer, &config, author.id, posts).await?;
         }
 
         info!("");
@@ -55,23 +57,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("All done!");
     Ok(())
-}
-
-pub fn create_connection(config: &Config) -> Result<rusqlite::Connection, rusqlite::Error> {
-    let db_path = config.output().join("post-archiver.db");
-    let conn = if db_path.exists() {
-        info!("Connecting to database: {}", db_path.display());
-        Connection::open(&db_path)?
-    } else {
-        info!("Creating database: {}", db_path.display());
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).expect("Failed to create database directory");
-        }
-
-        let conn = Connection::open(&db_path)?;
-        conn.execute_batch(post_archiver::utils::TEMPLATE_DATABASE_UP_SQL)?;
-        conn
-    };
-
-    Ok(conn)
 }

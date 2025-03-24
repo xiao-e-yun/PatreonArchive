@@ -10,11 +10,7 @@ use tokio::{
     sync::{Semaphore, SemaphorePermit},
 };
 
-use crate::{
-    config::Config,
-    // author::{ Author, FollowingAuthor, SupportingAuthor },
-    // post::{ Post, PostListCache, PostListItem },
-};
+use crate::config::Config;
 
 const RETRY_LIMIT: u32 = 3;
 

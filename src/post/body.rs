@@ -1,41 +1,45 @@
 use std::collections::HashMap;
 
 use log::error;
-use post_archiver::{Content, FileMetaId};
+use post_archiver::importer::{file_meta::UnsyncFileMeta, post::UnsyncContent};
 
 use crate::{
     fanbox::{PostBlock, PostBlockStyle, PostBody, PostEmbed, PostTextEmbed, PostVideo},
     post::get_source_link,
 };
 
+use super::file::FanboxFileMeta;
+
 impl PostBody {
-    pub fn content(&self, files: &HashMap<String, FileMetaId>) -> Vec<Content> {
-        let mut content = self.text(files);
+    pub fn content(&self) -> Vec<UnsyncContent> {
+        let mut content = self.text();
 
         for image in self.images.clone().unwrap_or_default() {
-            content.push(Content::File(*files.get(&image.id).unwrap()));
+            let file = UnsyncFileMeta::from_image(image);
+            content.push(UnsyncContent::File(file));
         }
 
         for file in self.files.clone().unwrap_or_default() {
-            content.push(Content::File(*files.get(&file.id).unwrap()));
+            let file = UnsyncFileMeta::from_file(file);
+            content.push(UnsyncContent::File(file));
         }
 
         for video in self.videos.clone().unwrap_or_default() {
-            content.push(Content::Text(video.to_text()));
+            content.push(UnsyncContent::Text(video.to_text()));
         }
 
         content
     }
 
-    pub fn text(&self, files: &HashMap<String, FileMetaId>) -> Vec<Content> {
+    pub fn text(&self) -> Vec<UnsyncContent> {
         let mut content = vec![];
         if let Some(text) = self.text.clone() {
-            content.push(Content::Text(text.replace("\n", "<br>")));
+            content.push(UnsyncContent::Text(text.replace("\n", "<br>")));
         }
 
         if let Some(blocks) = self.blocks.as_ref() {
             for block in blocks.clone() {
-                content.push(block.to_text(self, &files));
+                content.push(block.to_text(self));
             }
         }
 
@@ -44,37 +48,51 @@ impl PostBody {
 }
 
 impl PostBlock {
-    pub fn to_text(self, body: &PostBody, files: &HashMap<String, FileMetaId>) -> Content {
+    pub fn to_text(self, body: &PostBody) -> UnsyncContent {
         match self {
             PostBlock::P { text, styles } => {
                 if text.is_empty() {
-                    Content::Text("<br>".to_string())
+                    UnsyncContent::Text("<br>".to_string())
                 } else {
-                    Content::Text(Self::style_text(text, styles))
+                    UnsyncContent::Text(Self::style_text(text, styles))
                 }
             }
             PostBlock::Header { text, styles } => {
-                Content::Text(format!("# {}", Self::style_text(text, styles)))
+                UnsyncContent::Text(format!("# {}", Self::style_text(text, styles)))
             }
-            PostBlock::Image { image_id } => Content::File(*files.get(&image_id).unwrap()),
-            PostBlock::File { file_id } => Content::File(*files.get(&file_id).unwrap()),
+            PostBlock::Image { image_id } => {
+                let images = body.image_map.as_ref().unwrap();
+                let Some(image) = images.get(&image_id) else {
+                    return UnsyncContent::Text(format!("[Image Mismatch: {}]", image_id));
+                };
+                let file = UnsyncFileMeta::from_image(image.clone());
+                UnsyncContent::File(file)
+            }
+            PostBlock::File { file_id } => {
+                let files = body.file_map.as_ref().unwrap();
+                let Some(file) = files.get(&file_id) else {
+                    return UnsyncContent::Text(format!("[File Mismatch: {}]", file_id));
+                };
+                let file = UnsyncFileMeta::from_file(file.clone());
+                UnsyncContent::File(file)
+            }
             PostBlock::Embed { embed_id } => {
                 let Some(embed) = body.embed_map.as_ref().unwrap().get(&embed_id) else {
-                    return Content::Text(format!("[Embed not found: {}]", embed_id));
+                    return UnsyncContent::Text(format!("[Embed not found: {}]", embed_id));
                 };
-                Content::Text(embed.to_text())
+                UnsyncContent::Text(embed.to_text())
             }
             PostBlock::Video { video_id } => {
                 let videos = body.videos.as_ref().unwrap();
                 let video = videos.iter().find(|v| v.video_id == video_id).unwrap();
-                Content::Text(video.to_text())
+                UnsyncContent::Text(video.to_text())
             }
             PostBlock::UrlEmbed { url_embed_id } => {
                 let Some(url_embed) = body.url_embed_map.as_ref().unwrap().get(&url_embed_id)
                 else {
-                    return Content::Text(format!("[URL Embed not found: {}]", url_embed_id));
+                    return UnsyncContent::Text(format!("[URL Embed not found: {}]", url_embed_id));
                 };
-                Content::Text(url_embed.to_text())
+                UnsyncContent::Text(url_embed.to_text())
             }
         }
     }

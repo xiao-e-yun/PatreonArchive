@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use post_archiver::utils::get_mime;
 use serde::{Deserialize, Serialize};
 
 use super::super::FollowingCreator;
@@ -64,20 +63,13 @@ pub struct PostImage {
 }
 
 impl PostImage {
-    pub fn id(&self) -> String {
-        self.id.clone()
-    }
     pub fn filename(&self) -> String {
         format!("{}.{}", self.id, self.extension)
     }
-    pub fn extension(&self) -> String {
-        self.extension.clone()
-    }
-    pub fn url(&self) -> String {
-        self.original_url.clone()
-    }
     pub fn mime(&self) -> String {
-        get_mime(&self.filename())
+        mime_guess::from_ext(&self.extension)
+            .first_or_octet_stream()
+            .to_string()
     }
 }
 
@@ -99,23 +91,13 @@ pub struct PostFile {
 }
 
 impl PostFile {
-    pub fn id(&self) -> String {
-        self.id.clone()
-    }
     pub fn filename(&self) -> String {
         format!("{}.{}", self.name, self.extension)
     }
-    pub fn extension(&self) -> String {
-        self.extension.clone()
-    }
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-    pub fn url(&self) -> String {
-        self.url.clone()
-    }
     pub fn mime(&self) -> String {
-        get_mime(&self.filename())
+        mime_guess::from_ext(&self.extension)
+            .first_or_octet_stream()
+            .to_string()
     }
 }
 

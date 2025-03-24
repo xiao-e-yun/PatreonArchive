@@ -1,9 +1,11 @@
-use std::{collections::HashSet, error::Error, ops::Deref};
+use std::{collections::HashSet, error::Error};
 
-use chrono::{DateTime, Utc};
 use log::info;
-use post_archiver::{Author, AuthorId, FileMetaId, Link};
-use rusqlite::{params, Connection, OptionalExtension};
+use post_archiver::{
+    importer::{author::UnsyncAuthor, PostArchiverImporter},
+    Author, Link,
+};
+use rusqlite::Connection;
 
 use crate::{api::fanbox::FanboxClient, config::Config, fanbox::Creator};
 
@@ -44,12 +46,12 @@ pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error
 pub fn display_creators(creators: &Vec<Creator>) {
     if log::log_enabled!(log::Level::Info) {
         let mut creators = creators.clone();
-        creators.sort_by(|a, b| a.id().cmp(b.id()));
+        creators.sort_by(|a, b| a.creator_id.cmp(&b.creator_id));
 
         let (mut id_width, mut fee_width) = (11_usize, 5_usize);
         for creator in creators.iter() {
-            id_width = creator.id().len().max(id_width);
-            fee_width = creator.fee().to_string().len().max(fee_width);
+            id_width = creator.creator_id.len().max(id_width);
+            fee_width = creator.fee.to_string().len().max(fee_width);
         }
 
         info!(
@@ -59,9 +61,7 @@ pub fn display_creators(creators: &Vec<Creator>) {
         for creator in creators.iter() {
             info!(
                 "| {:id_width$} | {:fee_width$}$ | {}",
-                creator.id(),
-                creator.fee(),
-                creator.name()
+                creator.creator_id, creator.fee, creator.name
             );
         }
         info!(
@@ -74,111 +74,22 @@ pub fn display_creators(creators: &Vec<Creator>) {
 }
 
 pub fn sync_creators(
-    conn: &mut Connection,
+    importer: &mut PostArchiverImporter<Connection>,
     creators: Vec<Creator>,
-) -> Result<Vec<SyncedCreator>, Box<dyn Error>> {
+) -> Result<Vec<(Author, String)>, Box<dyn Error>> {
     let mut list = vec![];
-    let tx = conn.transaction().unwrap();
-    {
-        let mut get_alias_stmt = tx.prepare("SELECT target FROM author_alias WHERE source = ?")?;
-        let mut get_author_stmt = tx.prepare("SELECT * FROM authors WHERE id = ?")?;
-        let mut update_author_stmt = tx.prepare("UPDATE authors SET links = ? WHERE id = ?")?;
-        let mut insert_author_stmt =
-            tx.prepare("INSERT INTO authors (name,links) VALUES (?,?) RETURNING *")?;
-        let mut insert_alias_stmt =
-            tx.prepare("INSERT INTO author_alias (source,target) VALUES (?,?)")?;
+    let importer = importer.transaction()?;
 
-        for creator in creators {
-            let alias = format!("fanbox:{}", creator.id());
-            let link = || Link::new("fanbox", &format!("https://{}.fanbox.cc/", creator.id()));
-
-            let author = match get_alias_stmt
-                .query_row([&alias], |row| row.get::<_, AuthorId>(0))
-                .optional()?
-            {
-                Some(id) => {
-                    // it should be safe to unwrap here
-                    // because author_alias has foreign key constraint
-                    let mut author = get_author_stmt.query_row([id], row_to_author).unwrap();
-
-                    let links = &mut author.links;
-                    let link = link();
-
-                    if !links.contains(&link) {
-                        info!(" + Update author `{}` links", author.name);
-                        links.push(link);
-                        links.sort();
-                        let links = serde_json::to_string(&links)?;
-                        update_author_stmt.execute(params![links, author.id])?;
-                    }
-
-                    author
-                }
-                None => {
-                    info!(
-                        " + Add new creator {} -> `{}`",
-                        creator.id(),
-                        creator.name()
-                    );
-                    let name = creator.name();
-                    let link = link();
-                    let links = serde_json::to_string(&[link])?;
-                    let author =
-                        insert_author_stmt.query_row(params![name, links], row_to_author)?;
-                    insert_alias_stmt
-                        .execute(params![alias, author.id])
-                        .unwrap();
-                    author
-                }
-            };
-
-            fn row_to_author(row: &rusqlite::Row) -> Result<Author, rusqlite::Error> {
-                let id: AuthorId = AuthorId::new(row.get("id")?);
-
-                let name: String = row.get("name")?;
-
-                let links: String = row.get("links")?;
-                let links: Vec<Link> =
-                    serde_json::from_str(&links).expect("Author links is not valid JSON");
-
-                let thumb: Option<FileMetaId> = row.get("id")?;
-
-                let updated: DateTime<Utc> = row.get("updated")?;
-
-                Ok(Author {
-                    id,
-                    name,
-                    links,
-                    thumb,
-                    updated,
-                })
-            }
-
-            list.push(SyncedCreator { creator, author });
-        }
+    for creator in creators.into_iter() {
+        let alias = format!("fanbox:{}", creator.creator_id);
+        let link = Link::new("fanbox", &format!("https://{}.fanbox.cc/", creator.creator_id));
+        let (author, _) = UnsyncAuthor::new(creator.name.to_string())
+            .alias(vec![alias])
+            .links(vec![link])
+            .sync(&importer)?;
+        list.push((author, creator.creator_id));
     }
-    tx.commit().unwrap();
+
+    importer.commit()?;
     Ok(list)
-}
-
-pub struct SyncedCreator {
-    creator: Creator,
-    author: Author,
-}
-
-impl SyncedCreator {
-    pub fn creator(&self) -> &Creator {
-        &self.creator
-    }
-    pub fn author(&self) -> &Author {
-        &self.author
-    }
-}
-
-impl Deref for SyncedCreator {
-    type Target = Creator;
-
-    fn deref(&self) -> &Self::Target {
-        &self.creator
-    }
 }

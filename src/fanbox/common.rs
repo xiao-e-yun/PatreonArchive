@@ -10,15 +10,6 @@ pub struct User {
     pub user_id: String,
 }
 
-impl User {
-    pub fn id(&self) -> &str {
-        &self.user_id
-    }
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum PostType {

@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
-use log::{error, info};
+use log::{debug, error};
 use reqwest::header;
 use reqwest_middleware::RequestBuilder;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
     config::Config,
-    fanbox::{Creator, FollowingCreator, Post, PostListItem, SupportingCreator},
+    fanbox::{FollowingCreator, Post, PostListItem, SupportingCreator},
 };
 
 use super::ArchiveClient;
@@ -73,7 +73,7 @@ impl FanboxClient {
 
     pub async fn download(&self, url: &str, path: PathBuf) -> Result<(), reqwest::Error> {
         if !self.overwrite && path.exists() {
-            info!("Download was skip ({})", path.display());
+            debug!("Download was skip ({})", path.display());
             return Ok(());
         }
 
@@ -82,7 +82,7 @@ impl FanboxClient {
         let request = self.wrap_request(request);
         let response = request.send().await.expect("Failed to send request");
 
-        info!("Downloading {} to {}", url, path.display());
+        debug!("Downloading {} to {}", url, path.display());
         let mut file = tokio::fs::File::create(path).await.unwrap();
         self.inner.download(response, &mut file).await?;
 
@@ -113,11 +113,11 @@ impl FanboxClient {
 
     pub async fn get_posts(
         &self,
-        creator: &Creator,
+        creator: &str,
     ) -> Result<APIListCreatorPost, Box<dyn std::error::Error>> {
         let url = format!(
             "https://api.fanbox.cc/post.paginateCreator?creatorId={}",
-            creator.id()
+            creator
         );
         let urls: APIListCreatorPaginate = self.fetch(&url).await.expect("Failed to get post list");
 
@@ -145,10 +145,6 @@ impl FanboxClient {
         let url = format!("https://api.fanbox.cc/post.info?postId={}", post_id);
         let post: APIPost = self.fetch(&url).await.expect("Failed to get post");
         Ok(post)
-    }
-
-    pub fn overwrite(&self) -> bool {
-        self.overwrite
     }
 }
 
