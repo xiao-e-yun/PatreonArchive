@@ -14,9 +14,7 @@ use post_archiver::{
     importer::{
         file_meta::{ImportFileMetaMethod, UnsyncFileMeta},
         post::UnsyncPost,
-        ImportConnection, PostArchiverImporter,
-    },
-    AuthorId,
+    }, manager::{PostArchiverConnection, PostArchiverManager}, AuthorId
 };
 use rusqlite::Connection;
 use serde_json::json;
@@ -32,12 +30,12 @@ pub async fn get_post_urls(
 }
 
 pub fn filter_unsynced_posts(
-    importer: &mut PostArchiverImporter<impl ImportConnection>,
+    manager: &mut PostArchiverManager<impl PostArchiverConnection>,
     mut posts: Vec<PostListItem>,
 ) -> Result<Vec<PostListItem>, rusqlite::Error> {
     posts.retain(|post| {
         let source = get_source_link(&post.creator_id, &post.id);
-        let post_updated = importer
+        let post_updated = manager
             .check_post_with_updated(&source, &post.updated_datetime)
             .expect("Failed to check post");
         post_updated.is_none()
@@ -68,19 +66,19 @@ pub async fn get_posts(
 }
 
 pub async fn sync_posts(
-    importer: &mut PostArchiverImporter<Connection>,
+    manager: &mut PostArchiverManager<Connection>,
     config: &Config,
     author: AuthorId,
     posts: Vec<Post>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let importer = importer.transaction()?;
+    let manager = manager.transaction()?;
     let total_posts = posts.len();
 
     let mut synced_posts = 0;
     let mut post_files = vec![];
     for post in posts {
         info!(" syncing {}", post.title);
-        match sync_post(&importer, author, post) {
+        match sync_post(&manager, author, post) {
             Ok(files) => {
                 synced_posts += 1;
                 info!(" + success");
@@ -105,14 +103,14 @@ pub async fn sync_posts(
     let client = FanboxClient::new(config);
     download_files(post_files, &client).await?;
 
-    importer.commit()?;
+    manager.commit()?;
 
     info!("{} total", total_posts);
     info!("{} success", synced_posts);
     info!("{} failed", total_posts - synced_posts);
 
     fn sync_post(
-        importer: &PostArchiverImporter<impl ImportConnection>,
+        manager: &PostArchiverManager<impl PostArchiverConnection>,
         author: AuthorId,
         post: Post,
     ) -> Result<Vec<(PathBuf, ImportFileMetaMethod)>, Box<dyn std::error::Error>> {
@@ -146,7 +144,7 @@ pub async fn sync_posts(
             .content(content)
             .thumb(thumb);
 
-        let (_, files) = post.sync(importer)?;
+        let (_, files) = post.sync(manager)?;
 
         Ok(files)
     }

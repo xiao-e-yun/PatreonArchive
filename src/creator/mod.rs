@@ -1,10 +1,7 @@
 use std::{collections::HashSet, error::Error};
 
 use log::info;
-use post_archiver::{
-    importer::{author::UnsyncAuthor, PostArchiverImporter},
-    Author, Link,
-};
+use post_archiver::{importer::UnsyncAuthor, manager::PostArchiverManager, Author, Link};
 use rusqlite::Connection;
 
 use crate::{api::fanbox::FanboxClient, config::Config, fanbox::Creator};
@@ -38,7 +35,7 @@ pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error
     creators.retain(|c| config.filter_creator(c));
     let filtered = creators.len();
     info!("Excluded: {} creators", total - filtered);
-    info!("Filtered: {} creators", filtered);
+    info!("Included: {} creators", filtered);
     info!("");
     Ok(creators.into_iter().collect())
 }
@@ -74,11 +71,11 @@ pub fn display_creators(creators: &[Creator]) {
 }
 
 pub fn sync_creators(
-    importer: &mut PostArchiverImporter<Connection>,
+    manager: &mut PostArchiverManager<Connection>,
     creators: Vec<Creator>,
 ) -> Result<Vec<(Author, String)>, Box<dyn Error>> {
     let mut list = vec![];
-    let importer = importer.transaction()?;
+    let manager = manager.transaction()?;
 
     for creator in creators.into_iter() {
         let alias = format!("fanbox:{}", creator.creator_id);
@@ -86,13 +83,14 @@ pub fn sync_creators(
             "fanbox",
             &format!("https://{}.fanbox.cc/", creator.creator_id),
         );
-        let (author, _) = UnsyncAuthor::new(creator.name.to_string())
+        let author = UnsyncAuthor::new(creator.name.to_string())
             .alias(vec![alias])
             .links(vec![link])
-            .sync(&importer)?;
+            .sync(&manager)?;
+
         list.push((author, creator.creator_id));
     }
 
-    importer.commit()?;
+    manager.commit()?;
     Ok(list)
 }
