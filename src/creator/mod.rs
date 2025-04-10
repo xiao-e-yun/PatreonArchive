@@ -1,94 +1,85 @@
-use std::{collections::HashSet, error::Error};
+use std::error::Error;
 
 use log::info;
 use post_archiver::{importer::UnsyncAuthor, manager::PostArchiverManager, Author, Link};
 use rusqlite::Connection;
 
-use crate::{api::fanbox::FanboxClient, config::Config, fanbox::Creator};
+use crate::{api::patreon::PatreonClient, config::Config, patreon::{Member, User}};
 
-pub async fn get_creators(config: &Config) -> Result<Vec<Creator>, Box<dyn Error>> {
-    let accepts = config.accepts();
-    info!("Accepts:");
-    for accept in accepts.list() {
-        info!(" + {}", accept);
-    }
+pub async fn get_user_and_members(config: &Config) -> Result<(User, Vec<Member>), Box<dyn Error>> {
+    let client = PatreonClient::new(&config);
+
+    info!("Checking User Data");
+    let user = client.get_current_user_id().await?;
+    info!("Name: {}", user.full_name);
+    info!("Id: {}", user.id);
     info!("");
 
-    let client = FanboxClient::new(config);
-    let mut creators: HashSet<Creator> = HashSet::new();
-    info!("Checking creators");
-    if accepts.accept_following() {
-        let following = client.get_following_creators().await?;
-        info!(" + Following: {} found", following.len());
-        creators.extend(following.into_iter().map(|f| f.into()));
-    }
-
-    if accepts.accept_supporting() {
-        let supporting = client.get_supporting_creators().await?;
-        info!(" + Supporting: {} found", supporting.len());
-        creators.extend(supporting.into_iter().map(|f| f.into()));
-    }
+    info!("Loading Member List");
+    let mut members = client.get_members(&user).await?;
     info!("");
 
-    let total = creators.len();
-    info!("Total: {} creators", total);
-    creators.retain(|c| config.filter_creator(c));
-    let filtered = creators.len();
-    info!("Excluded: {} creators", total - filtered);
-    info!("Included: {} creators", filtered);
+    let total = members.len();
+    info!("Total: {} members", total);
+    members.retain(|c| config.filter_member(c));
+    let filtered = members.len();
+    info!("Excluded: {} members", total - filtered);
+    info!("Included: {} members", filtered);
     info!("");
-    Ok(creators.into_iter().collect())
+    Ok((user, members.into_iter().collect()))
 }
 
-pub fn display_creators(creators: &[Creator]) {
+pub fn display_members(members: &[Member]) {
     if log::log_enabled!(log::Level::Info) {
-        let mut creators = creators.to_vec();
-        creators.sort_by(|a, b| a.creator_id.cmp(&b.creator_id));
+        let mut members = members.to_vec();
+        members.sort_by(|a, b| a.campaign.name.cmp(&b.campaign.name));
 
-        let (mut id_width, mut fee_width) = (11_usize, 5_usize);
-        for creator in creators.iter() {
-            id_width = creator.creator_id.len().max(id_width);
-            fee_width = creator.fee.to_string().len().max(fee_width);
+        let (mut id_width, mut cents_width, mut currency_width) = (11_usize, 5_usize, 0_usize);
+        for member in members.iter() {
+            id_width = member.campaign.name.len().max(id_width);
+            cents_width =  member.cents().to_string().len().max(cents_width);
+            currency_width = member.campaign_currency.len().max(currency_width);
         }
 
+        let cents_total_width = cents_width + 1 + currency_width;
         info!(
-            "+-{:-<id_width$}-+-{:-<fee_width$}--+-{}------- - -",
-            " CreatorId ", " Fee ", " Name "
+            "+-{:-<id_width$}-+-{:-<cents_total_width$}-+-{}------- - -",
+            " CreatorId ", " Cents ", " Name "
         );
-        for creator in creators.iter() {
+        for member in members.iter() {
             info!(
-                "| {:id_width$} | {:fee_width$}$ | {}",
-                creator.creator_id, creator.fee, creator.name
+                "| {:id_width$} | {:cents_width$} {} | {}",
+                member.campaign.id,
+                member.cents(),
+                member.campaign_currency,
+                member.campaign.name
             );
         }
         info!(
-            "+-{}-+-{}--+------------ - -",
+            "+-{}-+-{}-+-------------- - -",
             "-".to_string().repeat(id_width),
-            "-".to_string().repeat(fee_width)
+            "-".to_string().repeat(cents_total_width)
         );
         info!("");
     }
 }
 
-pub fn sync_creators(
+pub fn sync_campaign(
     manager: &mut PostArchiverManager<Connection>,
-    creators: Vec<Creator>,
+    members: Vec<Member>,
 ) -> Result<Vec<(Author, String)>, Box<dyn Error>> {
     let mut list = vec![];
     let manager = manager.transaction()?;
 
-    for creator in creators.into_iter() {
-        let alias = format!("fanbox:{}", creator.creator_id);
-        let link = Link::new(
-            "fanbox",
-            &format!("https://{}.fanbox.cc/", creator.creator_id),
-        );
-        let author = UnsyncAuthor::new(creator.name.to_string())
+    for member in members.into_iter() {
+        let alias = format!("patreon:{}", member.campaign.id);
+        let link = Link::new("patreon", &member.campaign.url);
+        let author = UnsyncAuthor::new(member.campaign.name.clone())
             .alias(vec![alias])
             .links(vec![link])
             .sync(&manager)?;
 
-        list.push((author, creator.creator_id));
+        list.push((author, member.campaign.id.clone()));
     }
 
     manager.commit()?;

@@ -1,18 +1,18 @@
-# Fanbox Archive
+# Patreon Archive
 
 > Check [PostArchiver](https://github.com/xiao-e-yun/PostArchiver) to know more info.
 
-It is importer for fanbox to PostArchiver.
+It is importer for patreon to PostArchiver.
 
 ```sh
-Usage: fanbox-archive [OPTIONS] <SESSION> [OUTPUT]
+Usage: patreon-archive [OPTIONS] <SESSION> [OUTPUT]
 
 Arguments:
-  <SESSION>  Your `FANBOXSESSID` cookie [env: FANBOXSESSID=]
+  <SESSION>  Your `session_id` cookie [env: SESSION=]
   [OUTPUT]   Which you path want to save [env: OUTPUT=] [default: ./archive]
 
 Options:
-  -s, --save <SAVE>                 Which you type want to save [env: SAVE=all] [default: supporting] [possible values: all, following, supporting]
+  -s, --save <SAVE>                 Which you type want to save [env: SAVE=] [default: supporting] [possible values: all, following, supporting]
   -f, --force                       Force download
   -o, --overwrite                   Overwrite existing files
   -w, --whitelist [<WHITELIST>...]  Whitelist of creator IDs
@@ -30,3 +30,4 @@ How to build & run code
 ```sh
 cargo run
 ```
+

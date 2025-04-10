@@ -1,4 +1,4 @@
-pub mod fanbox;
+pub mod patreon;
 
 use futures::StreamExt;
 use reqwest::{Client, Response};

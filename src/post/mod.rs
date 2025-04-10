@@ -3,40 +3,28 @@ pub mod file;
 
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{
-    api::fanbox::FanboxClient,
-    config::Config,
-    fanbox::{Post, PostListItem},
-};
-use file::{download_files, FanboxFileMeta};
+use crate::{api::patreon::PatreonClient, config::Config, patreon::{post::Post, User}};
+use chrono::DateTime;
+use file::{download_files, PatreonFileMeta};
 use log::{debug, error, info};
 use post_archiver::{
     importer::{
         file_meta::{ImportFileMetaMethod, UnsyncFileMeta},
         post::UnsyncPost,
-    }, manager::{PostArchiverConnection, PostArchiverManager}, AuthorId
+    },
+    manager::{PostArchiverConnection, PostArchiverManager},
+    AuthorId,
 };
 use rusqlite::Connection;
 use serde_json::json;
 
-pub async fn get_post_urls(
-    config: &Config,
-    creator_id: &str,
-) -> Result<Vec<PostListItem>, Box<dyn std::error::Error>> {
-    let client = FanboxClient::new(config);
-    let mut items = client.get_posts(creator_id).await?;
-    items.retain(|item| config.filter_post(item));
-    Ok(items)
-}
-
 pub fn filter_unsynced_posts(
     manager: &mut PostArchiverManager<impl PostArchiverConnection>,
-    mut posts: Vec<PostListItem>,
-) -> Result<Vec<PostListItem>, rusqlite::Error> {
+    mut posts: Vec<Post>,
+) -> Result<Vec<Post>, rusqlite::Error> {
     posts.retain(|post| {
-        let source = get_source_link(&post.creator_id, &post.id);
         let post_updated = manager
-            .check_post_with_updated(&source, &post.updated_datetime)
+            .check_post_with_updated(&post.url, &DateTime::parse_from_rfc3339(&post.published_at).unwrap().to_utc())
             .expect("Failed to check post");
         post_updated.is_none()
     });
@@ -45,22 +33,13 @@ pub fn filter_unsynced_posts(
 
 pub async fn get_posts(
     config: &Config,
-    posts: Vec<PostListItem>,
+    user: &User,
+    campaign: &str,
 ) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
-    let client = FanboxClient::new(config);
-    let mut tasks = vec![];
-    for post in posts {
-        let client = client.clone();
-        tasks.push(tokio::spawn(async move {
-            client.get_post(post.id).await.expect("Failed to get post")
-        }));
-    }
+    let client = PatreonClient::new(config);
 
-    let mut posts = Vec::new();
-
-    for task in tasks {
-        posts.push(task.await?);
-    }
+    let mut posts = client.get_posts(user, campaign).await?;
+    posts.retain(|item| config.filter_post(item));
 
     Ok(posts)
 }
@@ -100,7 +79,7 @@ pub async fn sync_posts(
         }
     }
 
-    let client = FanboxClient::new(config);
+    let client = PatreonClient::new(config);
     download_files(post_files, &client).await?;
 
     manager.commit()?;
@@ -114,18 +93,13 @@ pub async fn sync_posts(
         author: AuthorId,
         post: Post,
     ) -> Result<Vec<(PathBuf, ImportFileMetaMethod)>, Box<dyn std::error::Error>> {
-        let source = get_source_link(&post.creator_id, &post.id);
-
-        let mut tags = vec!["fanbox".to_string()];
-        if post.fee_required == 0 {
+        let mut tags = vec!["patreon".to_string()];
+        if post.required_cents() == 0 {
             tags.push("free".to_string());
         }
-        if post.has_adult_content {
-            tags.push("r-18".to_string());
-        }
 
-        let thumb = post.cover_image_url.clone().map(|url| {
-            let mut meta = UnsyncFileMeta::from_url(url);
+        let thumb = post.image.clone().map(|image| {
+            let mut meta = UnsyncFileMeta::from_url(image.url);
             meta.extra = HashMap::from([
                 ("width".to_string(), json!(1200)),
                 ("height".to_string(), json!(630)),
@@ -133,12 +107,13 @@ pub async fn sync_posts(
             meta
         });
 
-        let content = post.body.content();
+        let content = vec![];
 
+        let published = DateTime::parse_from_rfc3339(&post.published_at).unwrap().to_utc();
         let post = UnsyncPost::new(author)
-            .source(Some(source))
-            .published(post.published_datetime)
-            .updated(post.updated_datetime)
+            .source(Some(post.url))
+            .published(published)
+            .updated(published)
             .tags(tags)
             .title(post.title)
             .content(content)
@@ -150,8 +125,4 @@ pub async fn sync_posts(
     }
 
     Ok(())
-}
-
-pub fn get_source_link(creator_id: &str, post_id: &str) -> String {
-    format!("https://{}.fanbox.cc/posts/{}", creator_id, post_id)
 }

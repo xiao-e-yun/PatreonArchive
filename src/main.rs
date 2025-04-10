@@ -3,14 +3,15 @@ mod config;
 mod creator;
 mod post;
 
-pub mod fanbox;
+mod patreon;
 
 use std::error::Error;
 
+use api::patreon::PatreonClient;
 use config::Config;
-use creator::{display_creators, get_creators, sync_creators};
+use creator::{display_members, get_user_and_members, sync_campaign};
 use log::{info, warn};
-use post::{filter_unsynced_posts, get_post_urls, get_posts, sync_posts};
+use post::{filter_unsynced_posts, get_posts, sync_posts};
 use post_archiver::{manager::PostArchiverManager, utils::VERSION};
 
 #[tokio::main]
@@ -18,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = Config::parse();
     config.init_logger();
 
-    info!("# Fanbox Archive #");
+    info!("# Patreon Archive #");
     info!("");
     info!("==================================");
     info!("PostArchiver version: v{}", VERSION);
@@ -34,17 +35,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Connecting to PostArchiver");
     let mut manager = PostArchiverManager::open_or_create(config.output())?;
 
-    info!("Loading Creator List");
-    let creators = get_creators(&config).await?;
-    display_creators(&creators);
+    let (user, members) = get_user_and_members(&config).await?;
+    display_members(&members);
 
-    info!("Syncing Creator List"); 
-    let authors = sync_creators(&mut manager, creators)?;
+    info!("Syncing Campaign List"); 
+    let authors = sync_campaign(&mut manager, members)?;
 
-    info!("Loading Creators Post");
-    for (author, creator_id) in authors {
+    info!("Loading Members Post");
+    for (author, campaign_id) in authors {
         info!("{}", &author.name);
-        let mut posts = get_post_urls(&config, &creator_id).await?;
+        let mut posts = get_posts(&config, &user, &campaign_id).await?;
 
         let total_post = posts.len();
         let mut posts_count_info = format!("{} posts", total_post);
@@ -54,7 +54,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
         info!(" + {}", posts_count_info);
 
-        let posts = get_posts(&config, posts).await?;
         if !posts.is_empty() {
             sync_posts(&mut manager, &config, author.id, posts).await?;
         }

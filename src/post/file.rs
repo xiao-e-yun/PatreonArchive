@@ -5,14 +5,11 @@ use mime_guess::MimeGuess;
 use post_archiver::importer::file_meta::{ImportFileMetaMethod, UnsyncFileMeta};
 use serde_json::json;
 
-use crate::{
-    api::fanbox::FanboxClient,
-    fanbox::{PostBody, PostFile, PostImage},
-};
+use crate::{api::patreon::PatreonClient, patreon::post::Media};
 
 pub async fn download_files(
     files: Vec<(PathBuf, ImportFileMetaMethod)>,
-    client: &FanboxClient,
+    client: &PatreonClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut tasks = vec![];
 
@@ -42,18 +39,19 @@ pub async fn download_files(
     Ok(())
 }
 
-pub trait FanboxFileMeta
+pub trait PatreonFileMeta
 where
     Self: Sized,
 {
     fn from_url(url: String) -> Self;
-    fn from_image(image: PostImage) -> Self;
-    fn from_file(file: PostFile) -> Self;
+    fn from_media(image: Media) -> Self;
 }
 
-impl FanboxFileMeta for UnsyncFileMeta {
+impl PatreonFileMeta for UnsyncFileMeta {
     fn from_url(url: String) -> Self {
-        let filename = url.split('/').next_back().unwrap().to_string();
+        let mut filename = url.split('/').next_back().unwrap().to_string();
+        filename.truncate(filename.find('?').unwrap_or(url.len()));
+
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
@@ -67,14 +65,26 @@ impl FanboxFileMeta for UnsyncFileMeta {
             method,
         }
     }
-    fn from_image(image: PostImage) -> Self {
-        let filename = image.filename();
-        let mime = image.mime();
-        let extra = HashMap::from([
-            ("width".to_string(), json!(image.width)),
-            ("height".to_string(), json!(image.height)),
-        ]);
-        let method = ImportFileMetaMethod::Url(image.original_url);
+    fn from_media(image: Media) -> Self {
+        let filename = image.file_name;
+        let mime = MimeGuess::from_path(&filename)
+            .first_or_octet_stream()
+            .to_string();
+
+        let mut extra = HashMap::new();
+
+        let dimensions = &image.metadata.dimensions;
+        if let Some(dimensions) = dimensions {
+            extra.insert("width".to_string(), json!(dimensions.w));
+            extra.insert("height".to_string(), json!(dimensions.h));
+        }
+
+        let method = ImportFileMetaMethod::Url(
+            image
+                .download_url
+                .or(image.image_urls.map(|v| v.original))
+                .unwrap(),
+        );
 
         Self {
             filename,
@@ -82,57 +92,5 @@ impl FanboxFileMeta for UnsyncFileMeta {
             extra,
             method,
         }
-    }
-    fn from_file(file: PostFile) -> Self {
-        let filename = file.filename();
-        let mime = file.mime();
-        let extra = Default::default();
-        let method = ImportFileMetaMethod::Url(file.url);
-
-        Self {
-            filename,
-            mime,
-            extra,
-            method,
-        }
-    }
-}
-
-impl PostBody {
-    pub fn files(&self) -> Vec<UnsyncFileMeta> {
-        let mut files: Vec<UnsyncFileMeta> = vec![];
-
-        if let Some(list) = self.images.clone() {
-            files.extend(post_images_to_files(list));
-        }
-
-        if let Some(map) = self.image_map.clone() {
-            files.extend(post_images_to_files(map.into_values().collect()));
-        };
-
-        if let Some(list) = self.files.clone() {
-            files.extend(psot_files_to_files(list));
-        }
-
-        if let Some(map) = self.file_map.clone() {
-            files.extend(psot_files_to_files(map.into_values().collect()));
-        };
-
-        // util function
-        fn post_images_to_files(images: Vec<PostImage>) -> Vec<UnsyncFileMeta> {
-            images
-                .into_iter()
-                .map(UnsyncFileMeta::from_image)
-                .collect()
-        }
-
-        fn psot_files_to_files(files: Vec<PostFile>) -> Vec<UnsyncFileMeta> {
-            files
-                .into_iter()
-                .map(UnsyncFileMeta::from_file)
-                .collect()
-        }
-
-        files
     }
 }

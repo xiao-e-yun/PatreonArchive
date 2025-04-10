@@ -6,12 +6,12 @@ use dotenv::dotenv;
 use save_type::SaveType;
 use std::path::PathBuf;
 
-use crate::fanbox::{Creator, PostListItem};
+use crate::{patreon::{post::Post, Member}};
 
 #[derive(Debug, Clone, Parser, Default)]
 pub struct Config {
-    /// Your `FANBOXSESSID` cookie
-    #[clap(env = "FANBOXSESSID")]
+    /// Your `session_id` cookie
+    #[clap(env = "SESSION")]
     session: String,
     /// Which you path want to save
     #[arg(default_value = "./archive", env = "OUTPUT")]
@@ -56,17 +56,14 @@ impl Config {
     }
     /// Get the session cookie
     pub fn session(&self) -> String {
-        if self.session.starts_with("FANBOXSESSID=") {
+        if self.session.starts_with("session_id=") {
             self.session.clone()
         } else {
-            format!("FANBOXSESSID={}", self.session)
+            format!("session_id={}", self.session)
         }
     }
     pub fn overwrite(&self) -> bool {
         self.overwrite
-    }
-    pub fn accepts(&self) -> SaveType {
-        self.save
     }
 
     pub fn output(&self) -> &PathBuf {
@@ -76,24 +73,23 @@ impl Config {
         self.limit
     }
 
-    pub fn filter_creator(&self, creator: &Creator) -> bool {
-        let creator_id = creator.creator_id.to_string();
+    pub fn filter_member(&self, member: &Member) -> bool {
+        let name = &member.campaign.name;
         let mut accept = true;
 
-        accept &= !(self.skip_free && creator.fee == 0);
-        accept &= self.whitelist.is_empty() || self.whitelist.contains(&creator_id);
-        accept &= !self.blacklist.contains(&creator_id);
+        accept &= !(self.skip_free && member.cents() == 0);
+        accept &= self.whitelist.is_empty() || self.whitelist.contains(name);
+        accept &= !self.blacklist.contains(name);
 
         accept
     }
 
-    pub fn filter_post(&self, post: &PostListItem) -> bool {
+    pub fn filter_post(&self, post: &Post) -> bool {
         let mut accept = true;
 
         // skip_free is true and the post is free
-        accept &= !(self.skip_free && post.fee_required == 0);
-        // is_restricted means the post is for supporters only
-        accept &= !post.is_restricted;
+        accept &= !(self.skip_free && post.required_cents() == 0);
+        accept &= post.current_user_can_view;
 
         accept
     }
