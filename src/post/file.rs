@@ -44,6 +44,7 @@ where
     Self: Sized,
 {
     fn from_url(url: String) -> Self;
+    #[allow(unused)]
     fn from_media(image: Media) -> Self;
 }
 

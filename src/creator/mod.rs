@@ -4,10 +4,14 @@ use log::info;
 use post_archiver::{importer::UnsyncAuthor, manager::PostArchiverManager, Author, Link};
 use rusqlite::Connection;
 
-use crate::{api::patreon::PatreonClient, config::Config, patreon::{Member, User}};
+use crate::{
+    api::patreon::PatreonClient,
+    config::Config,
+    patreon::{Member, User},
+};
 
 pub async fn get_user_and_members(config: &Config) -> Result<(User, Vec<Member>), Box<dyn Error>> {
-    let client = PatreonClient::new(&config);
+    let client = PatreonClient::new(config);
 
     info!("Checking User Data");
     let user = client.get_current_user_id().await?;
@@ -37,7 +41,7 @@ pub fn display_members(members: &[Member]) {
         let (mut id_width, mut cents_width, mut currency_width) = (11_usize, 5_usize, 0_usize);
         for member in members.iter() {
             id_width = member.campaign.name.len().max(id_width);
-            cents_width =  member.cents().to_string().len().max(cents_width);
+            cents_width = member.cents().to_string().len().max(cents_width);
             currency_width = member.campaign_currency.len().max(currency_width);
         }
 

@@ -6,7 +6,7 @@ use dotenv::dotenv;
 use save_type::SaveType;
 use std::path::PathBuf;
 
-use crate::{patreon::{post::Post, Member}};
+use crate::patreon::{post::Post, Member};
 
 #[derive(Debug, Clone, Parser, Default)]
 pub struct Config {

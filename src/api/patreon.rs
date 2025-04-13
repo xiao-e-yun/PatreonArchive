@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
 use jsonapi_deserialize::{deserialize_document, Document, JsonApiDeserialize};
-use log::{debug, info, log_enabled, trace};
+use log::{debug, log_enabled, trace};
 use reqwest::header;
 use reqwest_middleware::RequestBuilder;
-use rusqlite::config;
 use serde_json::Value;
 
 use crate::{
@@ -51,7 +50,7 @@ impl PatreonClient {
         let request = self.wrap_request(request);
         let response = request.send().await.expect("Failed to send request");
         let response = response.text().await.expect("Failed to get response body");
-        
+
         debug!("GET {}", url);
         if log_enabled!(log::Level::Trace) {
             let response: Value = serde_json::from_str(&response).unwrap();
@@ -104,7 +103,11 @@ impl PatreonClient {
         Ok(list)
     }
 
-    pub async fn get_posts(&self, user: &User, campaign: &str) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
+    pub async fn get_posts(
+        &self,
+        user: &User,
+        campaign: &str,
+    ) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
         let url = format!(
             "https://www.patreon.com/api/posts?include=attachments_media%2Cimages.null%2Caudio.null&fields%5Bpost%5D=comment_count%2Ccontent%2Ccurrent_user_can_view%2Cmin_cents_pledged_to_view%2Cembed%2Cimage%2Cpost_metadata%2Cpublished_at%2Cpost_type%2Ctitle%2Curl&fields%5Buser%5D=image_url%2Cfull_name%2Curl&fields%5Bmedia%5D=id%2Cimage_urls%2Cdownload_url%2Cmetadata%2Cfile_name&sort=-published_at&filter%5Bis_draft%5D=false&filter%5Baccessible_by_user_id%5D={}&filter%5Bcontains_exclusive_posts%5D=true&json-api-use-default-includes=false&json-api-version=1.0&filter%5Bcampaign_id%5D={}",
             user.id,
@@ -117,7 +120,9 @@ impl PatreonClient {
             let document: Document<Vec<Post>> = self.fetch(&url).await?;
 
             list.extend(document.data);
-            next_url = document.links.and_then(|links| links.next.map(|v| v.href.to_string()));
+            next_url = document
+                .links
+                .and_then(|links| links.next.map(|v| v.href.to_string()));
         }
 
         Ok(list)

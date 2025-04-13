@@ -3,7 +3,11 @@ pub mod file;
 
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{api::patreon::PatreonClient, config::Config, patreon::{post::Post, User}};
+use crate::{
+    api::patreon::PatreonClient,
+    config::Config,
+    patreon::{post::Post, User},
+};
 use chrono::DateTime;
 use file::{download_files, PatreonFileMeta};
 use log::{debug, error, info};
@@ -24,7 +28,12 @@ pub fn filter_unsynced_posts(
 ) -> Result<Vec<Post>, rusqlite::Error> {
     posts.retain(|post| {
         let post_updated = manager
-            .check_post_with_updated(&post.url, &DateTime::parse_from_rfc3339(&post.published_at).unwrap().to_utc())
+            .check_post_with_updated(
+                &post.url,
+                &DateTime::parse_from_rfc3339(&post.published_at)
+                    .unwrap()
+                    .to_utc(),
+            )
             .expect("Failed to check post");
         post_updated.is_none()
     });
@@ -109,7 +118,9 @@ pub async fn sync_posts(
 
         let content = vec![];
 
-        let published = DateTime::parse_from_rfc3339(&post.published_at).unwrap().to_utc();
+        let published = DateTime::parse_from_rfc3339(&post.published_at)
+            .unwrap()
+            .to_utc();
         let post = UnsyncPost::new(author)
             .source(Some(post.url))
             .published(published)

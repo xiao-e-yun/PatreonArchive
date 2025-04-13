@@ -1,4 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+#![allow(unused)]
+
+use std::collections::HashMap;
 
 use jsonapi_deserialize::JsonApiDeserialize;
 use serde::Deserialize;

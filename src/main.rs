@@ -7,7 +7,6 @@ mod patreon;
 
 use std::error::Error;
 
-use api::patreon::PatreonClient;
 use config::Config;
 use creator::{display_members, get_user_and_members, sync_campaign};
 use log::{info, warn};
@@ -23,8 +22,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("");
     info!("==================================");
     info!("PostArchiver version: v{}", VERSION);
-    info!("Overwrite: {}",config.overwrite());
-    info!("Output: {}",config.output().display());
+    info!("Overwrite: {}", config.overwrite());
+    info!("Output: {}", config.output().display());
     info!("==================================");
 
     if !config.output().exists() {
@@ -38,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (user, members) = get_user_and_members(&config).await?;
     display_members(&members);
 
-    info!("Syncing Campaign List"); 
+    info!("Syncing Campaign List");
     let authors = sync_campaign(&mut manager, members)?;
 
     info!("Loading Members Post");
