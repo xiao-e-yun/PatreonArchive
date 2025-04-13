@@ -12,7 +12,6 @@ Arguments:
   [OUTPUT]   Which you path want to save [env: OUTPUT=] [default: ./archive]
 
 Options:
-  -s, --save <SAVE>                 Which you type want to save [env: SAVE=] [default: supporting] [possible values: all, following, supporting]
   -f, --force                       Force download
   -o, --overwrite                   Overwrite existing files
   -w, --whitelist [<WHITELIST>...]  Whitelist of creator IDs

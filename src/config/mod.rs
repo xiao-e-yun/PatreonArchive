@@ -3,7 +3,6 @@ pub mod save_type;
 use clap::{arg, Parser};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use dotenv::dotenv;
-use save_type::SaveType;
 use std::path::PathBuf;
 
 use crate::patreon::{post::Post, Member};
@@ -16,9 +15,6 @@ pub struct Config {
     /// Which you path want to save
     #[arg(default_value = "./archive", env = "OUTPUT")]
     output: PathBuf,
-    /// Which you type want to save
-    #[arg(short, long, default_value = "supporting", env = "SAVE")]
-    save: SaveType,
     /// Force download
     #[arg(short, long)]
     force: bool,
