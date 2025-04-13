@@ -70,12 +70,12 @@ impl Config {
     }
 
     pub fn filter_member(&self, member: &Member) -> bool {
-        let name = &member.campaign.name;
+        let id = member.campaign.url.split('/').last().unwrap().to_string();
         let mut accept = true;
 
         accept &= !(self.skip_free && member.cents() == 0);
-        accept &= self.whitelist.is_empty() || self.whitelist.contains(name);
-        accept &= !self.blacklist.contains(name);
+        accept &= self.whitelist.is_empty() || self.whitelist.contains(&id);
+        accept &= !self.blacklist.contains(&id);
 
         accept
     }

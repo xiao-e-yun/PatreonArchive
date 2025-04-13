@@ -116,7 +116,7 @@ pub async fn sync_posts(
             meta
         });
 
-        let content = vec![];
+        let content = post.content();
 
         let published = DateTime::parse_from_rfc3339(&post.published_at)
             .unwrap()

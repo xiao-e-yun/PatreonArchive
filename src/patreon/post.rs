@@ -1,10 +1,13 @@
 #![allow(unused)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use jsonapi_deserialize::JsonApiDeserialize;
+use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
 use serde::Deserialize;
 use serde_json::Value;
+
+use crate::post::file::PatreonFileMeta;
 
 #[derive(Debug, Clone, JsonApiDeserialize)]
 #[json_api(rename_all = "snake_case")]
@@ -25,10 +28,12 @@ pub struct Post {
     pub published_at: String,
     pub title: String,
     pub url: String,
-    // #[json_api(relationship = "optional", resource = "Vec<Media>")]
-    // pub audio: Option<Arc<Vec<Media>>>,
-    // #[json_api(relationship = "optional", resource = "Vec<Media>")]
-    // pub images: Option<Arc<Vec<Media>>>,
+    #[json_api(relationship = "optional", resource = "Media")]
+    pub audio: Option<Arc<Media>>,
+    #[json_api(relationship = "optional", resource = "Media")]
+    pub audio_preview: Option<Arc<Media>>,
+    #[json_api(relationship = "multiple", resource = "Media")]
+    pub media: Vec<Arc<Media>>,
 }
 
 impl Post {
@@ -72,7 +77,7 @@ pub struct PostMetadata {
 pub struct Media {
     pub id: String,
     pub file_name: String,
-    pub download_url: Option<String>,
+    pub download_url: String,
     pub image_urls: Option<MediaImageUrls>,
     pub metadata: MediaMetadata,
 }
@@ -94,6 +99,7 @@ pub struct MediaImageUrls {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MediaMetadata {
     pub dimensions: Option<MediaMetadataDimensions>,
+    pub duration_s: Option<u32>,
     #[serde(flatten)]
     pub others: HashMap<String, Value>,
 }

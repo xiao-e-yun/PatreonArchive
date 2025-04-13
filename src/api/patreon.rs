@@ -89,7 +89,7 @@ impl PatreonClient {
         &self,
         user: &User,
     ) -> Result<Vec<Member>, Box<dyn std::error::Error>> {
-        let url = format!("https://www.patreon.com/api/members?include=campaign&fields[campaign]=is_active%2Cname%2Curl&filter[user_id]={}&filter[membership_type]=active_patron%2Cdeclined_patron%2Cfree_trial%2Cgifted_c2f%2Cgifted_f2f%2Cfree_member&fields[member]=is_free_member%2Ccampaign_pledge_amount_cents%2Ccampaign_currency&page[offset]=0&page[count]=1000&json-api-version=1.0&json-api-use-default-includes=false", user.id);
+        let url = format!("https://www.patreon.com/api/members?include=campaign&fields[campaign]=is_active,name,url&filter[user_id]={}&filter[membership_type]=active_patron,declined_patron,free_trial,gifted_c2f,gifted_f2f,free_member&fields[member]=is_free_member,campaign_pledge_amount_cents,campaign_currency&page[offset]=0&page[count]=1000&json-api-version=1.0&json-api-use-default-includes=false", user.id);
 
         let mut next_url = Some(url);
         let mut list: Vec<Member> = vec![];
@@ -109,7 +109,7 @@ impl PatreonClient {
         campaign: &str,
     ) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
         let url = format!(
-            "https://www.patreon.com/api/posts?include=attachments_media%2Cimages.null%2Caudio.null&fields%5Bpost%5D=comment_count%2Ccontent%2Ccurrent_user_can_view%2Cmin_cents_pledged_to_view%2Cembed%2Cimage%2Cpost_metadata%2Cpublished_at%2Cpost_type%2Ctitle%2Curl&fields%5Buser%5D=image_url%2Cfull_name%2Curl&fields%5Bmedia%5D=id%2Cimage_urls%2Cdownload_url%2Cmetadata%2Cfile_name&sort=-published_at&filter%5Bis_draft%5D=false&filter%5Baccessible_by_user_id%5D={}&filter%5Bcontains_exclusive_posts%5D=true&json-api-use-default-includes=false&json-api-version=1.0&filter%5Bcampaign_id%5D={}",
+            "https://www.patreon.com/api/posts?include=media,audio.null,audio_preview.null&fields[post]=comment_count,content,current_user_can_view,min_cents_pledged_to_view,embed,image,post_metadata,published_at,post_type,title,url&fields[user]=image_url,full_name,url&fields[media]=id,image_urls,download_url,metadata,file_name&sort=-published_at&filter[is_draft]=false&filter[accessible_by_user_id]={}&filter[contains_exclusive_posts]=true&json-api-use-default-includes=false&json-api-version=1.0&filter[campaign_id]={}",
             user.id,
             campaign
         );

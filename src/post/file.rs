@@ -44,8 +44,8 @@ where
     Self: Sized,
 {
     fn from_url(url: String) -> Self;
-    #[allow(unused)]
     fn from_media(image: Media) -> Self;
+    fn from_audio_thumb(image: Media, filename: String) -> Self;
 }
 
 impl PatreonFileMeta for UnsyncFileMeta {
@@ -66,26 +66,48 @@ impl PatreonFileMeta for UnsyncFileMeta {
             method,
         }
     }
-    fn from_media(image: Media) -> Self {
-        let filename = image.file_name;
+    fn from_media(media: Media) -> Self {
+        let filename = media.file_name;
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
 
         let mut extra = HashMap::new();
 
-        let dimensions = &image.metadata.dimensions;
+        let dimensions = &media.metadata.dimensions;
         if let Some(dimensions) = dimensions {
             extra.insert("width".to_string(), json!(dimensions.w));
             extra.insert("height".to_string(), json!(dimensions.h));
         }
 
-        let method = ImportFileMetaMethod::Url(
-            image
-                .download_url
-                .or(image.image_urls.map(|v| v.original))
-                .unwrap(),
-        );
+        let duration_s = &media.metadata.duration_s;
+        if let Some(duration_s) = duration_s {
+            extra.insert("duration_s".to_string(), json!(duration_s));
+        }
+
+        let method = ImportFileMetaMethod::Url(media.download_url);
+
+        Self {
+            filename,
+            mime,
+            extra,
+            method,
+        }
+    }
+    fn from_audio_thumb(media: Media, filename: String) -> Self {
+        let mime = MimeGuess::from_path(&filename)
+            .first_or_octet_stream()
+            .to_string();
+
+        let mut extra = HashMap::new();
+
+        let dimensions = &media.metadata.dimensions;
+        if let Some(dimensions) = dimensions {
+            extra.insert("width".to_string(), json!(dimensions.w));
+            extra.insert("height".to_string(), json!(dimensions.h));
+        }
+
+        let method = ImportFileMetaMethod::Url(media.download_url);
 
         Self {
             filename,
