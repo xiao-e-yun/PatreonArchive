@@ -40,7 +40,7 @@ pub fn display_members(members: &[Member]) {
 
         let (mut id_width, mut cents_width, mut currency_width) = (11_usize, 5_usize, 0_usize);
         for member in members.iter() {
-            id_width = member.campaign.name.len().max(id_width);
+            id_width = member.campaign.id.len().max(id_width);
             cents_width = member.cents().to_string().len().max(cents_width);
             currency_width = member.campaign_currency.len().max(currency_width);
         }
