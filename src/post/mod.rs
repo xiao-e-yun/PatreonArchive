@@ -10,7 +10,7 @@ use crate::{
 };
 use chrono::DateTime;
 use file::{download_files, PatreonFileMeta};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use post_archiver::{
     importer::{
         file_meta::{ImportFileMetaMethod, UnsyncFileMeta},
@@ -77,7 +77,7 @@ pub async fn sync_posts(
                     if log::log_enabled!(log::Level::Debug) {
                         for (file, method) in &files {
                             debug!("    + {}", file.display());
-                            debug!("      + {}", method);
+                            trace!("      + {}", method);
                         }
                     }
 
