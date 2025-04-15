@@ -26,8 +26,8 @@ impl Post {
             contents.push(content);
         }
 
-        let audio_id = self.audio.as_ref().map(|e| &e.id);
-        let audio_preview_id = self.audio_preview.as_ref().map(|e| &e.id);
+        let audio_id = self.audio.as_deref().map(|e| &e.id);
+        let audio_preview_id = self.audio_preview.as_deref().map(|e| &e.id);
 
         let thumb_square_url = self.image.as_ref().map(|e| &e.thumb_square_url);
 
@@ -38,15 +38,16 @@ impl Post {
                 audio_id.is_none_or(|id| &media.id != id)
                     && audio_preview_id.is_none_or(|id| &media.id != id)
             })
+            .map(|e| e.as_ref().clone())
             .collect::<Vec<_>>(); // filter audio & audio_preview
         let mut contents = Vec::new();
 
         let audio = self.audio.as_deref();
-        let mut audio_file_name: Option<String> = None;
+        let mut audio_file_name: Option<&str> = None;
 
         if let Some(audio) = audio {
             let file_name = &audio.file_name;
-            audio_file_name = Some(file_name.rsplit_once('.').unwrap().0.to_string());
+            audio_file_name = Some(file_name.rsplit_once('.').unwrap().0);
 
             let file = UnsyncFileMeta::from_media(audio.clone());
             contents.push(UnsyncContent::File(file));
@@ -56,17 +57,14 @@ impl Post {
             let thumbnail = media.image_urls.as_ref().map(|e| &e.thumbnail);
             if audio.is_some() && thumbnail == thumb_square_url {
                 // the original image of audio cover
+                let ext = media.file_name.rsplit_once('.').unwrap().1.to_string();
                 let file = UnsyncFileMeta::from_audio_thumb(
-                    media.as_ref().clone(),
-                    format!(
-                        "{}.thumb.{}",
-                        audio_file_name.as_ref().unwrap(),
-                        media.file_name.rsplit_once('.').unwrap().1
-                    ),
+                    media,
+                    format!("{}.thumb.{}", audio_file_name.unwrap(), ext),
                 );
                 contents.push(UnsyncContent::File(file));
             } else {
-                let file = UnsyncFileMeta::from_media(media.as_ref().clone());
+                let file = UnsyncFileMeta::from_media(media);
                 contents.push(UnsyncContent::File(file));
             }
         }
