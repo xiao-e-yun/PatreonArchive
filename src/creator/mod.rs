@@ -38,7 +38,7 @@ pub fn display_members(members: &[Member]) {
         let mut members = members.to_vec();
         members.sort_by(|a, b| a.campaign.name.cmp(&b.campaign.name));
 
-        let (mut id_width, mut cents_width, mut currency_width) = (11_usize, 5_usize, 0_usize);
+        let (mut id_width, mut cents_width, mut currency_width) = (11_usize, 6_usize, 0_usize);
         for member in members.iter() {
             id_width = member.campaign.id.len().max(id_width);
             cents_width = member.cents().to_string().len().max(cents_width);
@@ -48,13 +48,13 @@ pub fn display_members(members: &[Member]) {
         let cents_total_width = cents_width + 1 + currency_width;
         info!(
             "+-{:-<id_width$}-+-{:-<cents_total_width$}-+-{}------- - -",
-            " CreatorId ", " Cents ", " Name "
+            " CreatorId ", " Amount ", " Name "
         );
         for member in members.iter() {
             info!(
-                "| {:id_width$} | {:cents_width$} {} | {}",
+                "| {:id_width$} | {:cents_width$.2} {} | {}",
                 member.campaign.id,
-                member.cents(),
+                member.cents() as f32 / 100.0,
                 member.campaign_currency,
                 member.campaign.name
             );
