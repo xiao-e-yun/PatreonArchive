@@ -34,6 +34,8 @@ pub struct Post {
     pub audio_preview: Option<Arc<Media>>,
     #[json_api(relationship = "multiple", resource = "Media")]
     pub media: Vec<Arc<Media>>,
+    #[json_api(relationship = "optional", resource = "Poll")]
+    pub poll: Option<Arc<Poll>>,
 }
 
 impl Post {
@@ -108,4 +110,18 @@ pub struct MediaMetadata {
 pub struct MediaMetadataDimensions {
     pub w: u32,
     pub h: u32,
+}
+
+#[derive(Debug, Clone, JsonApiDeserialize)]
+pub struct Poll {
+    #[json_api(relationship = "multiple", resource = "PollChoice")]
+    pub choices: Vec<Arc<PollChoice>>,
+}
+
+#[derive(Debug, Clone, JsonApiDeserialize)]
+#[json_api(rename_all = "snake_case")]
+pub struct PollChoice {
+    pub position: u32,
+    pub num_responses: u32,
+    pub text_content: String,
 }

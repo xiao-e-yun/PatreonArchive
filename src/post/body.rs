@@ -83,6 +83,10 @@ impl Post {
             }
         }
 
+        if let Some(_poll) = self.poll.as_deref() {
+            // todo
+        }
+
         std::mem::take(&mut contents)
     }
 }
