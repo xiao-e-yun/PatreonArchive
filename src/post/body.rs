@@ -104,7 +104,7 @@ impl Post {
             for choice in choices.iter() {
                 let percentage = choice.num_responses as f32 / total_votes as f32;
                 let vote = format!("{} ({:.0}%)",choice.num_responses, percentage * 100.);
-                table.push(format!("| {:^name_width$} | {:_<10} | {:<votes_width$} |", choice.text_content, "#".repeat(percentage as usize), vote));
+                table.push(format!("| {:^name_width$} | {:<10} | {:<votes_width$} |", choice.text_content, "#".repeat((percentage * 10.) as usize), vote));
             }
 
             contents.push(UnsyncContent::Text(table.join("\n")));
