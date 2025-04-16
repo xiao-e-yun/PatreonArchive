@@ -70,7 +70,13 @@ impl Config {
     }
 
     pub fn filter_member(&self, member: &Member) -> bool {
-        let id = member.campaign.url.split('/').last().unwrap().to_string();
+        let id = member
+            .campaign
+            .url
+            .split('/')
+            .next_back()
+            .unwrap()
+            .to_string();
         let mut accept = true;
 
         accept &= !(self.skip_free && member.cents() == 0);
