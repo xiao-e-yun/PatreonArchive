@@ -76,7 +76,7 @@ pub struct PostMetadata {
 #[json_api(rename_all = "snake_case")]
 pub struct Media {
     pub id: String,
-    pub file_name: String,
+    pub file_name: Option<String>,
     pub download_url: String,
     pub image_urls: Option<MediaImageUrls>,
     pub metadata: MediaMetadata,

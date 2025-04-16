@@ -67,7 +67,14 @@ impl PatreonFileMeta for UnsyncFileMeta {
         }
     }
     fn from_media(media: Media) -> Self {
-        let filename = media.file_name;
+        let filename = media.file_name.unwrap_or_else(|| {
+            media
+                .download_url
+                .split('/')
+                .next_back()
+                .unwrap()
+                .to_string()
+        });
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();

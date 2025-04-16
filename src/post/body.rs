@@ -47,7 +47,7 @@ impl Post {
 
         if let Some(audio) = audio {
             let file_name = &audio.file_name;
-            audio_file_name = Some(file_name.rsplit_once('.').unwrap().0);
+            audio_file_name = Some(file_name.as_ref().unwrap().rsplit_once('.').unwrap().0);
 
             let file = UnsyncFileMeta::from_media(audio.clone());
             contents.push(UnsyncContent::File(file));
@@ -57,7 +57,21 @@ impl Post {
             let thumbnail = media.image_urls.as_ref().map(|e| &e.thumbnail);
             if audio.is_some() && thumbnail == thumb_square_url {
                 // the original image of audio cover
-                let ext = media.file_name.rsplit_once('.').unwrap().1.to_string();
+                let ext = media
+                    .file_name
+                    .clone()
+                    .unwrap_or_else(|| {
+                        media
+                            .download_url
+                            .split('/')
+                            .next_back()
+                            .unwrap()
+                            .to_string()
+                    })
+                    .rsplit_once('.')
+                    .unwrap()
+                    .1
+                    .to_string();
                 let file = UnsyncFileMeta::from_audio_thumb(
                     media,
                     format!("{}.thumb.{}", audio_file_name.unwrap(), ext),
