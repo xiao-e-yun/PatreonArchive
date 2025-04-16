@@ -83,8 +83,31 @@ impl Post {
             }
         }
 
-        if let Some(_poll) = self.poll.as_deref() {
-            // todo
+        if let Some(poll) = self.poll.as_deref() {
+            let choices = poll.choices.clone();
+
+            let mut name_width = 4_usize;
+            let mut votes_width = 5_usize;
+            let mut total_votes = 0;
+            for choice in choices.iter() {
+                name_width = name_width.max(choice.text_content.len());
+                votes_width = votes_width.max(choice.num_responses.checked_ilog10().unwrap_or(0) as usize + 1) + 7; //X (xxx%)
+                total_votes += choice.num_responses;
+            };
+            if total_votes == 0 { total_votes = 1 };
+
+            let mut table = vec![
+                format!("| {:^name_width$} | Percentage | {:<votes_width$} |","Name","Votes"),
+                format!("|-{}-|------------|-{}-|","-".repeat(name_width),"-".repeat(votes_width)),
+            ];
+
+            for choice in choices.iter() {
+                let percentage = choice.num_responses as f32 / total_votes as f32;
+                let vote = format!("{} ({:.0}%)",choice.num_responses, percentage * 100.);
+                table.push(format!("| {:^name_width$} | {:_<10} | {:<votes_width$} |", choice.text_content, "#".repeat(percentage as usize), vote));
+            }
+
+            contents.push(UnsyncContent::Text(table.join("\n")));
         }
 
         std::mem::take(&mut contents)
