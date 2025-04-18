@@ -22,10 +22,6 @@ impl Post {
 
         let mut contents = Vec::new();
 
-        if let Some(content) = markdown {
-            contents.push(content);
-        }
-
         let audio_id = self.audio.as_deref().map(|e| &e.id);
         let audio_preview_id = self.audio_preview.as_deref().map(|e| &e.id);
 
@@ -40,7 +36,6 @@ impl Post {
             })
             .map(|e| e.as_ref().clone())
             .collect::<Vec<_>>(); // filter audio & audio_preview
-        let mut contents = Vec::new();
 
         let audio = self.audio.as_deref();
         let mut audio_file_name: Option<&str> = None;
@@ -91,23 +86,43 @@ impl Post {
             let mut total_votes = 0;
             for choice in choices.iter() {
                 name_width = name_width.max(choice.text_content.len());
-                votes_width = votes_width.max(choice.num_responses.checked_ilog10().unwrap_or(0) as usize + 1) + 7; //X (xxx%)
+                votes_width = votes_width
+                    .max(choice.num_responses.checked_ilog10().unwrap_or(0) as usize + 1)
+                    + 7; //X (xxx%)
                 total_votes += choice.num_responses;
+            }
+            if total_votes == 0 {
+                total_votes = 1
             };
-            if total_votes == 0 { total_votes = 1 };
 
             let mut table = vec![
-                format!("| {:^name_width$} | Percentage | {:<votes_width$} |","Name","Votes"),
-                format!("|-{}-|------------|-{}-|","-".repeat(name_width),"-".repeat(votes_width)),
+                format!(
+                    "| {:^name_width$} | Percentage | {:<votes_width$} |",
+                    "Name", "Votes"
+                ),
+                format!(
+                    "|-{}-|------------|-{}-|",
+                    "-".repeat(name_width),
+                    "-".repeat(votes_width)
+                ),
             ];
 
             for choice in choices.iter() {
                 let percentage = choice.num_responses as f32 / total_votes as f32;
-                let vote = format!("{} ({:.0}%)",choice.num_responses, percentage * 100.);
-                table.push(format!("| {:^name_width$} | {:<10} | {:<votes_width$} |", choice.text_content, "#".repeat((percentage * 10.) as usize), vote));
+                let vote = format!("{} ({:.0}%)", choice.num_responses, percentage * 100.);
+                table.push(format!(
+                    "| {:^name_width$} | {:<10} | {:<votes_width$} |",
+                    choice.text_content,
+                    "#".repeat((percentage * 10.) as usize),
+                    vote
+                ));
             }
 
             contents.push(UnsyncContent::Text(table.join("\n")));
+        }
+
+        if let Some(content) = markdown {
+            contents.push(content);
         }
 
         std::mem::take(&mut contents)
