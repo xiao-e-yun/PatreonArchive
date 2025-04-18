@@ -1,3 +1,4 @@
+pub mod comment;
 pub mod post;
 
 use std::sync::Arc;

@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::{
     config::Config,
-    patreon::{post::Post, Member, User},
+    patreon::{comment::Comment, post::Post, Member, User},
 };
 
 use super::ArchiveClient;
@@ -125,6 +125,28 @@ impl PatreonClient {
                 .and_then(|links| links.next.map(|v| v.href.to_string()));
         }
 
+        Ok(list)
+    }
+
+    pub async fn get_comments(
+        &self,
+        post_id: &str,
+    ) -> Result<Vec<Comment>, Box<dyn std::error::Error>> {
+        let url = format!(
+            "https://www.patreon.com/api/posts/{}/comments?include=commenter.campaign,replies,replies.commenter,replies.parent&fields[comment]=body,created&fields[user]=image_url,full_name,url&page[count]=1000&sort=-created&json-api-use-default-includes=false&json-api-version=1.0",
+            post_id
+        );
+
+        let mut next_url = Some(url);
+        let mut list: Vec<Comment> = vec![];
+        while let Some(url) = next_url {
+            let document: Document<Vec<Comment>> = self.fetch(&url).await?;
+
+            list.extend(document.data);
+            next_url = document
+                .links
+                .and_then(|links| links.next.map(|v| v.href.to_string()));
+        }
         Ok(list)
     }
 }

@@ -6,7 +6,7 @@ use std::{collections::HashMap, path::PathBuf};
 use crate::{
     api::patreon::PatreonClient,
     config::Config,
-    patreon::{post::Post, User},
+    patreon::{comment::Comment, post::Post, User},
 };
 use chrono::DateTime;
 use file::{download_files, PatreonFileMeta};
@@ -24,9 +24,9 @@ use serde_json::json;
 
 pub fn filter_unsynced_posts(
     manager: &mut PostArchiverManager<impl PostArchiverConnection>,
-    mut posts: Vec<Post>,
-) -> Result<Vec<Post>, rusqlite::Error> {
-    posts.retain(|post| {
+    mut posts: Vec<(Post, Vec<Comment>)>,
+) -> Result<Vec<(Post, Vec<Comment>)>, rusqlite::Error> {
+    posts.retain(|(post, _)| {
         let post_updated = manager
             .check_post_with_updated(
                 &post.url,
@@ -44,29 +44,55 @@ pub async fn get_posts(
     config: &Config,
     user: &User,
     campaign: &str,
-) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
+) -> Result<Vec<(Post, Vec<Comment>)>, Box<dyn std::error::Error>> {
     let client = PatreonClient::new(config);
 
     let mut posts = client.get_posts(user, campaign).await?;
     posts.retain(|item| config.filter_post(item));
 
-    Ok(posts)
+    const BATCH_SIZE: usize = 10;
+    const BATCH_DELAY_MS: u64 = 200;
+
+    let mut comments = Vec::with_capacity(posts.len());
+
+    for chunk in posts.chunks(BATCH_SIZE) {
+        let comment_futures = chunk
+            .iter()
+            .map(|e| client.get_comments(&e.id))
+            .collect::<Vec<_>>();
+
+        let batch_comments = futures::future::join_all(comment_futures).await;
+        comments.extend(batch_comments);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(BATCH_DELAY_MS)).await;
+    }
+
+    let result = posts
+        .into_iter()
+        .zip(comments)
+        .map(|(post, res)| {
+            let comments = res.expect("failed to get comments of post");
+            (post, comments)
+        })
+        .collect();
+
+    Ok(result)
 }
 
 pub async fn sync_posts(
     manager: &mut PostArchiverManager<Connection>,
     config: &Config,
     author: AuthorId,
-    posts: Vec<Post>,
+    posts: Vec<(Post, Vec<Comment>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let manager = manager.transaction()?;
     let total_posts = posts.len();
 
     let mut synced_posts = 0;
     let mut post_files = vec![];
-    for post in posts {
+    for (post, comments) in posts {
         info!(" syncing {}", post.title);
-        match sync_post(&manager, author, post) {
+        match sync_post(&manager, author, post, comments) {
             Ok(files) => {
                 synced_posts += 1;
                 info!(" + success");
@@ -101,6 +127,7 @@ pub async fn sync_posts(
         manager: &PostArchiverManager<impl PostArchiverConnection>,
         author: AuthorId,
         post: Post,
+        comments: Vec<Comment>,
     ) -> Result<Vec<(PathBuf, ImportFileMetaMethod)>, Box<dyn std::error::Error>> {
         let mut tags = vec!["patreon".to_string()];
         if post.required_cents() == 0 {
@@ -118,6 +145,8 @@ pub async fn sync_posts(
 
         let content = post.content();
 
+        let comments = comments.into_iter().map(|c| c.into()).collect();
+
         let published = DateTime::parse_from_rfc3339(&post.published_at)
             .unwrap()
             .to_utc();
@@ -128,7 +157,8 @@ pub async fn sync_posts(
             .tags(tags)
             .title(post.title)
             .content(content)
-            .thumb(thumb);
+            .thumb(thumb)
+            .comments(comments);
 
         let (_, files) = post.sync(manager)?;
 
