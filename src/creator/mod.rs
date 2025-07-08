@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use log::info;
-use post_archiver::{importer::UnsyncAuthor, manager::PostArchiverManager, Author, Link};
+use post_archiver::{importer::{UnsyncAlias, UnsyncAuthor}, manager::PostArchiverManager, AuthorId};
 use rusqlite::Connection;
 
 use crate::{
@@ -71,19 +71,19 @@ pub fn display_members(members: &[Member]) {
 pub fn sync_campaign(
     manager: &mut PostArchiverManager<Connection>,
     members: Vec<Member>,
-) -> Result<Vec<(Author, String)>, Box<dyn Error>> {
+) -> Result<Vec<(AuthorId, String, String)>, Box<dyn Error>> {
     let mut list = vec![];
     let manager = manager.transaction()?;
+    let platform = manager.import_platform("patreon".to_string())?;
 
     for member in members.into_iter() {
-        let alias = format!("patreon:{}", member.campaign.id);
-        let link = Link::new("patreon", &member.campaign.url);
+        let alias = UnsyncAlias::new(platform, member.campaign.id.clone())
+            .link(member.campaign.url.clone());
         let author = UnsyncAuthor::new(member.campaign.name.clone())
-            .alias(vec![alias])
-            .links(vec![link])
+            .aliases(vec![alias])
             .sync(&manager)?;
 
-        list.push((author, member.campaign.id.clone()));
+        list.push((author, member.campaign.name.clone(), member.campaign.id.clone()));
     }
 
     manager.commit()?;

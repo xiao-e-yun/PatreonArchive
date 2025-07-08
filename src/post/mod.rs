@@ -1,7 +1,7 @@
 mod body;
 pub mod file;
 
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 use crate::{
     api::patreon::PatreonClient,
@@ -9,15 +9,12 @@ use crate::{
     patreon::{comment::Comment, post::Post, User},
 };
 use chrono::DateTime;
-use file::{download_files, PatreonFileMeta};
-use log::{debug, error, info, trace};
+use file::{download_files, PatreonFileMeta, UnsyncFileMetaWithUrl};
+use log::info;
 use post_archiver::{
-    importer::{
-        file_meta::{ImportFileMetaMethod, UnsyncFileMeta},
-        post::UnsyncPost,
-    },
+    importer::{post::UnsyncPost, UnsyncTag},
     manager::{PostArchiverConnection, PostArchiverManager},
-    AuthorId,
+    AuthorId, PlatformId,
 };
 use rusqlite::Connection;
 use serde_json::json;
@@ -28,7 +25,7 @@ pub fn filter_unsynced_posts(
 ) -> Result<Vec<(Post, Vec<Comment>)>, rusqlite::Error> {
     posts.retain(|(post, _)| {
         let post_updated = manager
-            .check_post_with_updated(
+            .find_post_with_updated(
                 &post.url,
                 &DateTime::parse_from_rfc3339(&post.published_at)
                     .unwrap()
@@ -88,31 +85,14 @@ pub async fn sync_posts(
     let manager = manager.transaction()?;
     let total_posts = posts.len();
 
-    let mut synced_posts = 0;
-    let mut post_files = vec![];
-    for (post, comments) in posts {
-        info!(" syncing {}", post.title);
-        match sync_post(&manager, author, post, comments) {
-            Ok(files) => {
-                synced_posts += 1;
-                info!(" + success");
+    let platform = manager.import_platform("patreon".to_string())?;
 
-                if !files.is_empty() {
-                    // list all files
-                    debug!(" + files:");
-                    if log::log_enabled!(log::Level::Debug) {
-                        for (file, method) in &files {
-                            debug!("    + {}", file.display());
-                            trace!("      + {}", method);
-                        }
-                    }
+    let posts = posts
+        .into_iter()
+        .map(|(post, comments)| conversion_post(platform, author, post, comments))
+        .collect::<Result<Vec<_>, _>>()?;
 
-                    post_files.extend(files);
-                }
-            }
-            Err(e) => error!(" + failed: {}", e),
-        }
-    }
+    let (_posts, post_files) = manager.import_posts(posts, true)?;
 
     let client = PatreonClient::new(config);
     download_files(post_files, &client).await?;
@@ -120,49 +100,50 @@ pub async fn sync_posts(
     manager.commit()?;
 
     info!("{} total", total_posts);
-    info!("{} success", synced_posts);
-    info!("{} failed", total_posts - synced_posts);
 
-    fn sync_post(
-        manager: &PostArchiverManager<impl PostArchiverConnection>,
+    fn conversion_post(
+        platform: PlatformId,
         author: AuthorId,
         post: Post,
         comments: Vec<Comment>,
-    ) -> Result<Vec<(PathBuf, ImportFileMetaMethod)>, Box<dyn std::error::Error>> {
-        let mut tags = vec!["patreon".to_string()];
+    ) -> Result<(UnsyncPost, HashMap<String, String>), Box<rusqlite::Error>> {
+        let mut tags = vec![];
         if post.required_cents() == 0 {
-            tags.push("free".to_string());
+            tags.push(UnsyncTag {
+                name: "free".to_string(),
+                platform: None,
+            });
         }
 
         let thumb = post.image.clone().map(|image| {
-            let mut meta = UnsyncFileMeta::from_url(image.url);
-            meta.extra = HashMap::from([
+            let mut meta = UnsyncFileMetaWithUrl::from_url(image.url);
+            meta.0.extra = HashMap::from([
                 ("width".to_string(), json!(1200)),
                 ("height".to_string(), json!(630)),
             ]);
             meta
         });
 
-        let content = post.content();
+        let (content, mut files) = post.content_with_files();
+
+        if let Some(thumb) = &thumb {
+            files.insert(thumb.0.filename.clone(), thumb.1.clone());
+        }
 
         let comments = comments.into_iter().map(|c| c.into()).collect();
 
         let published = DateTime::parse_from_rfc3339(&post.published_at)
             .unwrap()
             .to_utc();
-        let post = UnsyncPost::new(author)
-            .source(Some(post.url))
+        let post = UnsyncPost::new(platform, post.url, post.title, content)
             .published(published)
             .updated(published)
+            .authors(vec![author])
             .tags(tags)
-            .title(post.title)
-            .content(content)
-            .thumb(thumb)
+            .thumb(thumb.map(|e| e.0))
             .comments(comments);
 
-        let (_, files) = post.sync(manager)?;
-
-        Ok(files)
+        Ok((post, files))
     }
 
     Ok(())

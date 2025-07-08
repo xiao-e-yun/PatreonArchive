@@ -1,10 +1,15 @@
-use htmd::{Element, HtmlToMarkdown};
-use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
+use std::collections::HashMap;
 
-use crate::{patreon::post::Post, post::file::PatreonFileMeta};
+use htmd::{Element, HtmlToMarkdown};
+use post_archiver::importer::UnsyncContent;
+
+use crate::{
+    patreon::post::Post,
+    post::file::{PatreonFileMeta, UnsyncFileMetaWithUrl},
+};
 
 impl Post {
-    pub fn content(&self) -> Vec<UnsyncContent> {
+    pub fn content_with_files(&self) -> (Vec<UnsyncContent>, HashMap<String, String>) {
         let img_handler = move |_: Element| -> Option<String> { None }; // skip images
 
         let htmd_converter = HtmlToMarkdown::builder()
@@ -21,6 +26,7 @@ impl Post {
         });
 
         let mut contents = Vec::new();
+        let mut files = HashMap::new();
 
         let audio_id = self.audio.as_deref().map(|e| &e.id);
         let audio_preview_id = self.audio_preview.as_deref().map(|e| &e.id);
@@ -44,8 +50,9 @@ impl Post {
             let file_name = &audio.file_name;
             audio_file_name = Some(file_name.as_ref().unwrap().rsplit_once('.').unwrap().0);
 
-            let file = UnsyncFileMeta::from_media(audio.clone());
-            contents.push(UnsyncContent::File(file));
+            let file = UnsyncFileMetaWithUrl::from_media(audio.clone());
+            files.insert(file.0.filename.clone(), file.1);
+            contents.push(UnsyncContent::File(file.0));
         }
 
         for media in filtered_media.into_iter() {
@@ -67,14 +74,16 @@ impl Post {
                     .unwrap()
                     .1
                     .to_string();
-                let file = UnsyncFileMeta::from_audio_thumb(
+                let file = UnsyncFileMetaWithUrl::from_audio_thumb(
                     media,
                     format!("{}.thumb.{}", audio_file_name.unwrap(), ext),
                 );
-                contents.push(UnsyncContent::File(file));
+                files.insert(file.0.filename.clone(), file.1);
+                contents.push(UnsyncContent::File(file.0));
             } else {
-                let file = UnsyncFileMeta::from_media(media);
-                contents.push(UnsyncContent::File(file));
+                let file = UnsyncFileMetaWithUrl::from_media(media);
+                files.insert(file.0.filename.clone(), file.1);
+                contents.push(UnsyncContent::File(file.0));
             }
         }
 
@@ -125,6 +134,6 @@ impl Post {
             contents.push(content);
         }
 
-        std::mem::take(&mut contents)
+        (contents, files)
     }
 }
