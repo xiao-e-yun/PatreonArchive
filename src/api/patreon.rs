@@ -89,7 +89,7 @@ impl PatreonClient {
         &self,
         user: &User,
     ) -> Result<Vec<Member>, Box<dyn std::error::Error>> {
-        let url = format!("https://www.patreon.com/api/members?include=campaign&fields[campaign]=is_active,name,url&filter[user_id]={}&filter[membership_type]=active_patron,declined_patron,free_trial,gifted_c2f,gifted_f2f,free_member&fields[member]=is_free_member,campaign_pledge_amount_cents,campaign_currency&page[offset]=0&page[count]=1000&json-api-version=1.0&json-api-use-default-includes=false", user.id);
+        let url = format!("https://www.patreon.com/api/members?include=campaign&fields[campaign]=is_active,name,url&filter[user_id]={}&filter[membership_type]=active_patron,declined_patron,free_trial,gifted_c2f,gifted_f2f&fields[member]=campaign_pledge_amount_cents,campaign_currency&page[offset]=0&page[count]=1000&json-api-version=1.0&json-api-use-default-includes=false", user.id);
 
         let mut next_url = Some(url);
         let mut list: Vec<Member> = vec![];
