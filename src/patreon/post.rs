@@ -66,7 +66,7 @@ pub struct Embed {
     html: Option<String>,
     linked_object_id: Option<String>,
     linked_object_type: Option<String>,
-    product_variant_id: Option<String>,
+    product_variant_id: Option<u32>,
     provider: Option<String>,
     provider_url: Option<String>,
     subject: Option<String>,
