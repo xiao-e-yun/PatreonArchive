@@ -90,7 +90,7 @@ impl Config {
         let mut accept = true;
 
         // skip_free is true and the post is free
-        accept &= !(self.skip_free && post.required_cents() == 0);
+        accept &= !(self.skip_free && post.is_free());
         accept &= post.current_user_can_view;
 
         accept

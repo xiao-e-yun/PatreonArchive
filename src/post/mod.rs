@@ -108,7 +108,7 @@ pub async fn sync_posts(
         comments: Vec<Comment>,
     ) -> Result<(UnsyncPost, HashMap<String, String>), Box<rusqlite::Error>> {
         let mut tags = vec![];
-        if post.required_cents() == 0 {
+        if post.is_free() {
             tags.push(UnsyncTag {
                 name: "free".to_string(),
                 platform: None,
