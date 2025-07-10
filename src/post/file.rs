@@ -63,11 +63,14 @@ impl PatreonFileMeta for UnsyncFileMetaWithUrl {
             .to_string();
         let extra = Default::default();
 
-        Self(UnsyncFileMeta {
-            filename,
-            mime,
-            extra,
-        }, url)
+        Self(
+            UnsyncFileMeta {
+                filename,
+                mime,
+                extra,
+            },
+            url,
+        )
     }
     fn from_media(media: Media) -> Self {
         let filename = media.file_name.unwrap_or_else(|| {
@@ -95,11 +98,14 @@ impl PatreonFileMeta for UnsyncFileMetaWithUrl {
             extra.insert("duration_s".to_string(), json!(duration_s));
         }
 
-        Self(UnsyncFileMeta {
-            filename,
-            mime,
-            extra,
-        }, media.download_url)
+        Self(
+            UnsyncFileMeta {
+                filename,
+                mime,
+                extra,
+            },
+            media.download_url,
+        )
     }
     fn from_audio_thumb(media: Media, filename: String) -> Self {
         let mime = MimeGuess::from_path(&filename)
@@ -114,10 +120,13 @@ impl PatreonFileMeta for UnsyncFileMetaWithUrl {
             extra.insert("height".to_string(), json!(dimensions.h));
         }
 
-        Self(UnsyncFileMeta {
-            filename,
-            mime,
-            extra,
-        }, media.download_url)
+        Self(
+            UnsyncFileMeta {
+                filename,
+                mime,
+                extra,
+            },
+            media.download_url,
+        )
     }
 }

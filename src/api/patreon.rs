@@ -109,7 +109,7 @@ impl PatreonClient {
         campaign: &str,
     ) -> Result<Vec<Post>, Box<dyn std::error::Error>> {
         let url = format!(
-            "https://www.patreon.com/api/posts?include=media,audio.null,audio_preview.null,poll.null,poll.choices,content_unlock_options.reward&fields[post]=comment_count,content,current_user_can_view,embed,image,post_metadata,published_at,post_type,title,url&fields[user]=image_url,full_name,url&fields[media]=id,image_urls,download_url,metadata,file_name&sort=-published_at&filter[is_draft]=false&filter[accessible_by_user_id]={}&filter[contains_exclusive_posts]=true&json-api-use-default-includes=false&json-api-version=1.0&filter[campaign_id]={}",
+            "https://www.patreon.com/api/posts?include=media,audio.null,audio_preview.null,poll.null,poll.choices,content_unlock_options.reward,user_defined_tags&fields[post]=comment_count,content,current_user_can_view,embed,image,post_metadata,published_at,post_type,title,url&fields[user]=image_url,full_name,url&fields[media]=id,image_urls,download_url,metadata,file_name&sort=-published_at&filter[is_draft]=false&filter[accessible_by_user_id]={}&filter[contains_exclusive_posts]=true&json-api-use-default-includes=false&json-api-version=1.0&filter[campaign_id]={}",
             user.id,
             campaign
         );

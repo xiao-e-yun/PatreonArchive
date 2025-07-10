@@ -72,7 +72,7 @@ pub fn display_members(members: &[Member]) {
     }
 }
 
-type SyncCampaignResult = Result<Vec<(AuthorId, String, String)>, Box<dyn Error>>;
+type SyncCampaignResult = Result<Vec<(AuthorId, String, String, String)>, Box<dyn Error>>;
 
 pub fn sync_campaign(
     manager: &mut PostArchiverManager<Connection>,
@@ -93,6 +93,7 @@ pub fn sync_campaign(
             author,
             member.campaign.name.clone(),
             member.campaign.id.clone(),
+            member.campaign.url.clone(),
         ));
     }
 

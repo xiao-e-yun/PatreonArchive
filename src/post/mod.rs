@@ -12,7 +12,7 @@ use chrono::DateTime;
 use file::{download_files, PatreonFileMeta, UnsyncFileMetaWithUrl};
 use log::info;
 use post_archiver::{
-    importer::{post::UnsyncPost, UnsyncTag},
+    importer::{post::UnsyncPost, UnsyncCollection, UnsyncTag},
     manager::{PostArchiverConnection, PostArchiverManager},
     AuthorId, PlatformId,
 };
@@ -80,6 +80,7 @@ pub async fn sync_posts(
     manager: &mut PostArchiverManager<Connection>,
     config: &Config,
     author: AuthorId,
+    url: String,
     posts: Vec<(Post, Vec<Comment>)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let manager = manager.transaction()?;
@@ -89,7 +90,7 @@ pub async fn sync_posts(
 
     let posts = posts
         .into_iter()
-        .map(|(post, comments)| conversion_post(platform, author, post, comments))
+        .map(|(post, comments)| conversion_post(platform, author, post, &url, comments))
         .collect::<Result<Vec<_>, _>>()?;
 
     let (_posts, post_files) = manager.import_posts(posts, true)?;
@@ -105,6 +106,7 @@ pub async fn sync_posts(
         platform: PlatformId,
         author: AuthorId,
         post: Post,
+        url: &str,
         comments: Vec<Comment>,
     ) -> Result<(UnsyncPost, HashMap<String, String>), Box<rusqlite::Error>> {
         let mut tags = vec![];
@@ -114,6 +116,21 @@ pub async fn sync_posts(
                 platform: None,
             });
         }
+
+        let collections = post
+            .user_defined_tags
+            .iter()
+            .map(|tag| {
+                UnsyncCollection::new(
+                    tag.value.clone(),
+                    format!(
+                        "{}/posts?filters[tag]={}",
+                        url,
+                        urlencoding::encode(&tag.value)
+                    ),
+                )
+            })
+            .collect();
 
         let thumb = post.image.clone().map(|image| {
             let mut meta = UnsyncFileMetaWithUrl::from_url(image.url);
@@ -141,7 +158,8 @@ pub async fn sync_posts(
             .authors(vec![author])
             .tags(tags)
             .thumb(thumb.map(|e| e.0))
-            .comments(comments);
+            .comments(comments)
+            .collections(collections);
 
         Ok((post, files))
     }

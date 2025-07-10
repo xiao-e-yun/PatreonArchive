@@ -28,3 +28,4 @@ reqwest-middleware = { version = "0.3.1", features = ["json"] }
 mime_guess = "2.0.5"
 jsonapi_deserialize = "1.2.0"
 htmd = "0.1.6"
+urlencoding = "2.1.3"

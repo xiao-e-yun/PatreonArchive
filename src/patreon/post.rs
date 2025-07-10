@@ -37,6 +37,8 @@ pub struct Post {
     pub poll: Option<Arc<Poll>>,
     #[json_api(relationship = "multiple", resource = "ContentUnlockOption")]
     pub content_unlock_options: Vec<Arc<ContentUnlockOption>>,
+    #[json_api(relationship = "multiple", resource = "PostTag")]
+    pub user_defined_tags: Vec<Arc<PostTag>>,
 }
 
 impl Post {
@@ -144,4 +146,11 @@ pub struct ContentUnlockOption {
 pub struct Reward {
     pub id: String,
     pub patron_amount_cents: u32,
+}
+
+#[derive(Debug, Clone, JsonApiDeserialize)]
+#[json_api(rename_all = "snake_case")]
+pub struct PostTag {
+    pub id: String,
+    pub value: String,
 }

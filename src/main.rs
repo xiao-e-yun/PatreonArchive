@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let authors = sync_campaign(&mut manager, members)?;
 
     info!("Loading Members Post");
-    for (author, name, campaign_id) in authors {
+    for (author, name, campaign_id, url) in authors {
         info!("{}", &name);
         let mut posts = get_posts(&config, &user, &campaign_id).await?;
 
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!(" + {posts_count_info}");
 
         if !posts.is_empty() {
-            sync_posts(&mut manager, &config, author, posts).await?;
+            sync_posts(&mut manager, &config, author, url, posts).await?;
         }
 
         info!("");
