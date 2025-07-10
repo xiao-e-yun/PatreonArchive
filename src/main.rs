@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("# Patreon Archive #");
     info!("");
     info!("==================================");
-    info!("PostArchiver version: v{}", VERSION);
+    info!("PostArchiver version: v{VERSION}");
     info!("Overwrite: {}", config.overwrite());
     info!("Output: {}", config.output().display());
     info!("==================================");
@@ -46,12 +46,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut posts = get_posts(&config, &user, &campaign_id).await?;
 
         let total_post = posts.len();
-        let mut posts_count_info = format!("{} posts", total_post);
+        let mut posts_count_info = format!("{total_post} posts");
         if !config.force() {
-            posts = filter_unsynced_posts(&mut manager, posts)?;
+            posts = filter_unsynced_posts(&manager, posts)?;
             posts_count_info += &format!(" ({} unsynced)", posts.len());
         };
-        info!(" + {}", posts_count_info);
+        info!(" + {posts_count_info}");
 
         if !posts.is_empty() {
             sync_posts(&mut manager, &config, author, posts).await?;

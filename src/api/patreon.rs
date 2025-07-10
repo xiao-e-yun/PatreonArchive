@@ -51,7 +51,7 @@ impl PatreonClient {
         let response = request.send().await.expect("Failed to send request");
         let response = response.text().await.expect("Failed to get response body");
 
-        debug!("GET {}", url);
+        debug!("GET {url}");
         if log_enabled!(log::Level::Trace) {
             let response: Value = serde_json::from_str(&response).unwrap();
             trace!("{}", serde_json::to_string_pretty(&response).unwrap());
@@ -133,8 +133,7 @@ impl PatreonClient {
         post_id: &str,
     ) -> Result<Vec<Comment>, Box<dyn std::error::Error>> {
         let url = format!(
-            "https://www.patreon.com/api/posts/{}/comments?include=commenter.campaign,replies,replies.commenter,replies.parent&fields[comment]=body,created&fields[user]=image_url,full_name,url&page[count]=1000&sort=-created&json-api-use-default-includes=false&json-api-version=1.0",
-            post_id
+            "https://www.patreon.com/api/posts/{post_id}/comments?include=commenter.campaign,replies,replies.commenter,replies.parent&fields[comment]=body,created&fields[user]=image_url,full_name,url&page[count]=1000&sort=-created&json-api-use-default-includes=false&json-api-version=1.0"
         );
 
         let mut next_url = Some(url);

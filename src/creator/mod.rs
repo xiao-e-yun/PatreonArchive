@@ -1,7 +1,11 @@
 use std::error::Error;
 
 use log::info;
-use post_archiver::{importer::{UnsyncAlias, UnsyncAuthor}, manager::PostArchiverManager, AuthorId};
+use post_archiver::{
+    importer::{UnsyncAlias, UnsyncAuthor},
+    manager::PostArchiverManager,
+    AuthorId,
+};
 use rusqlite::Connection;
 
 use crate::{
@@ -24,11 +28,11 @@ pub async fn get_user_and_members(config: &Config) -> Result<(User, Vec<Member>)
     info!("");
 
     let total = members.len();
-    info!("Total: {} members", total);
+    info!("Total: {total} members");
     members.retain(|c| config.filter_member(c));
     let filtered = members.len();
     info!("Excluded: {} members", total - filtered);
-    info!("Included: {} members", filtered);
+    info!("Included: {filtered} members");
     info!("");
     Ok((user, members.into_iter().collect()))
 }
@@ -68,10 +72,12 @@ pub fn display_members(members: &[Member]) {
     }
 }
 
+type SyncCampaignResult = Result<Vec<(AuthorId, String, String)>, Box<dyn Error>>;
+
 pub fn sync_campaign(
     manager: &mut PostArchiverManager<Connection>,
     members: Vec<Member>,
-) -> Result<Vec<(AuthorId, String, String)>, Box<dyn Error>> {
+) -> SyncCampaignResult {
     let mut list = vec![];
     let manager = manager.transaction()?;
     let platform = manager.import_platform("patreon".to_string())?;
@@ -83,7 +89,11 @@ pub fn sync_campaign(
             .aliases(vec![alias])
             .sync(&manager)?;
 
-        list.push((author, member.campaign.name.clone(), member.campaign.id.clone()));
+        list.push((
+            author,
+            member.campaign.name.clone(),
+            member.campaign.id.clone(),
+        ));
     }
 
     manager.commit()?;

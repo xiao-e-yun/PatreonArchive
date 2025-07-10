@@ -20,7 +20,7 @@ use rusqlite::Connection;
 use serde_json::json;
 
 pub fn filter_unsynced_posts(
-    manager: &mut PostArchiverManager<impl PostArchiverConnection>,
+    manager: &PostArchiverManager<impl PostArchiverConnection>,
     mut posts: Vec<(Post, Vec<Comment>)>,
 ) -> Result<Vec<(Post, Vec<Comment>)>, rusqlite::Error> {
     posts.retain(|(post, _)| {
@@ -99,7 +99,7 @@ pub async fn sync_posts(
 
     manager.commit()?;
 
-    info!("{} total", total_posts);
+    info!("{total_posts} total");
 
     fn conversion_post(
         platform: PlatformId,

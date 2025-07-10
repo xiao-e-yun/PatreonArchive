@@ -58,14 +58,14 @@ impl Config {
             format!("session_id={}", self.session)
         }
     }
-    pub fn overwrite(&self) -> bool {
+    pub const fn overwrite(&self) -> bool {
         self.overwrite
     }
 
-    pub fn output(&self) -> &PathBuf {
+    pub const fn output(&self) -> &PathBuf {
         &self.output
     }
-    pub fn limit(&self) -> usize {
+    pub const fn limit(&self) -> usize {
         self.limit
     }
 
@@ -96,7 +96,7 @@ impl Config {
         accept
     }
 
-    pub fn force(&self) -> bool {
+    pub const fn force(&self) -> bool {
         self.force
     }
 }
