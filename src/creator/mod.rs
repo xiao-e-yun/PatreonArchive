@@ -83,8 +83,17 @@ pub fn sync_campaign(
     let platform = manager.import_platform("patreon".to_string())?;
 
     for member in members.into_iter() {
-        let alias = UnsyncAlias::new(platform, member.campaign.id.clone())
-            .link(member.campaign.url.clone());
+        let alias = UnsyncAlias::new(
+            platform,
+            member
+                .campaign
+                .url
+                .split('/')
+                .next_back()
+                .unwrap_or_else(|| &member.campaign.id)
+                .to_string(),
+        )
+        .link(member.campaign.url.clone());
         let author = UnsyncAuthor::new(member.campaign.name.clone())
             .aliases(vec![alias])
             .sync(&manager)?;
