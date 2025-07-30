@@ -58,8 +58,8 @@ pub struct Image {
     pub thumb_square_url: String,
     pub thumb_url: String,
     pub url: String,
-    pub width: u32,
-    pub height: u32,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
