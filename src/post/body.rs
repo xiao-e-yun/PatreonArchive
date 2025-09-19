@@ -16,11 +16,14 @@ impl Post {
             .add_handler(vec!["img"], img_handler)
             .build();
 
-        let markdown = self.content.as_ref().map(|e| {
+        let markdown = self.content.as_ref().map(|html| {
             UnsyncContent::Text(
                 htmd_converter
-                    .convert(e)
-                    .expect("Failed to convert HTML to markdown")
+                    .convert(html)
+                    .inspect_err(|err| {
+                        log::error!("Failed to convert HTML to Markdown: {}", err);
+                    })
+                    .unwrap_or(html)
                     .replace('\n', "<br>"),
             )
         });
