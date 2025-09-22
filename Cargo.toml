@@ -1,6 +1,6 @@
 [package]
 name = "patreon-archive"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 license = "BSD-3-Clause"
 description = "A Patreon Download and Archiver"
@@ -31,3 +31,4 @@ post-archiver-utils = "0.0.7"
 tempfile = "3.22.0"
 indicatif = "0.18.0"
 indicatif-log-bridge = "0.2.3"
+urlencoding = "2.1.3"

@@ -20,7 +20,6 @@ pub struct Post {
     #[json_api(relationship = "single", resource = "Campaign")]
     pub campaign: Arc<Campaign>,
     pub image: Option<Image>,
-    pub min_cents_pledged_to_view: Option<u32>,
     /// UNKNOWN
     #[json_api(default)]
     pub embed: Option<Embed>,
@@ -40,11 +39,19 @@ pub struct Post {
     pub media: Vec<Arc<Media>>,
     #[json_api(relationship = "optional", resource = "Poll")]
     pub poll: Option<Arc<Poll>>,
+    #[json_api(relationship = "multiple", resource = "ContentUnlockOption")]
+    pub content_unlock_options: Vec<Arc<ContentUnlockOption>>,
+    #[json_api(relationship = "multiple", resource = "PostTag")]
+    pub user_defined_tags: Vec<Arc<PostTag>>,
 }
 
 impl Post {
-    pub fn required_cents(&self) -> u32 {
-        self.min_cents_pledged_to_view.unwrap_or_default()
+    pub fn is_free(&self) -> bool {
+        self.content_unlock_options.is_empty()
+            || self
+                .content_unlock_options
+                .iter()
+                .any(|e| e.reward.patron_amount_cents == 0)
     }
 }
 
@@ -55,8 +62,8 @@ pub struct Image {
     pub thumb_square_url: String,
     pub thumb_url: String,
     pub url: String,
-    pub width: u32,
-    pub height: u32,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -65,7 +72,7 @@ pub struct Embed {
     html: Option<String>,
     linked_object_id: Option<String>,
     linked_object_type: Option<String>,
-    product_variant_id: Option<String>,
+    product_variant_id: Option<u32>,
     provider: Option<String>,
     provider_url: Option<String>,
     subject: Option<String>,
@@ -128,4 +135,26 @@ pub struct PollChoice {
     pub position: u32,
     pub num_responses: u32,
     pub text_content: String,
+}
+
+#[derive(Debug, Clone, JsonApiDeserialize)]
+#[json_api(resource_type = "content-unlock-option")]
+pub struct ContentUnlockOption {
+    pub id: String,
+    #[json_api(relationship = "single", resource = "Reward")]
+    pub reward: Arc<Reward>,
+}
+
+#[derive(Debug, Clone, JsonApiDeserialize)]
+#[json_api(rename_all = "snake_case")]
+pub struct Reward {
+    pub id: String,
+    pub patron_amount_cents: u32,
+}
+
+#[derive(Debug, Clone, JsonApiDeserialize)]
+#[json_api(rename_all = "snake_case")]
+pub struct PostTag {
+    pub id: String,
+    pub value: String,
 }

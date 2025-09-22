@@ -62,11 +62,10 @@ impl Config {
             format!("session_id={}", self.session)
         }
     }
-
-    pub fn output(&self) -> &PathBuf {
+    pub const fn output(&self) -> &PathBuf {
         &self.output
     }
-    pub fn limit(&self) -> usize {
+    pub const fn limit(&self) -> usize {
         self.limit
     }
 
@@ -91,13 +90,13 @@ impl Config {
         let mut accept = true;
 
         // skip_free is true and the post is free
-        accept &= !(self.skip_free && post.required_cents() == 0);
+        accept &= !(self.skip_free && post.is_free());
         accept &= post.current_user_can_view;
 
         accept
     }
 
-    pub fn force(&self) -> bool {
+    pub const fn force(&self) -> bool {
         self.force
     }
 

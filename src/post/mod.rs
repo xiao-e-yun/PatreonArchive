@@ -17,7 +17,7 @@ use file::PatreonFileMeta;
 use futures::{future::join_all, try_join};
 use log::{error, info, trace};
 use post_archiver::{
-    importer::{post::UnsyncPost, UnsyncFileMeta, UnsyncTag},
+    importer::{post::UnsyncPost, UnsyncCollection, UnsyncFileMeta, UnsyncTag},
     manager::{PostArchiverConnection, PostArchiverManager},
     AuthorId, PlatformId,
 };
@@ -168,6 +168,7 @@ pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutpu
         pb.posts.position(),
         pb.posts.length().unwrap_or_default()
     );
+
     fn conversion_post(
         platform: PlatformId,
         author: AuthorId,
@@ -175,12 +176,27 @@ pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutpu
         comments: Vec<Comment>,
     ) -> UnsyncPost<String> {
         let mut tags = vec![];
-        if post.required_cents() == 0 {
+        if post.is_free() {
             tags.push(UnsyncTag {
                 name: "free".to_string(),
                 platform: None,
             });
         }
+
+        let collections = post
+            .user_defined_tags
+            .iter()
+            .map(|tag| {
+                UnsyncCollection::new(
+                    tag.value.clone(),
+                    format!(
+                        "{}/posts?filters[tag]={}",
+                        post.campaign.url,
+                        urlencoding::encode(&tag.value)
+                    ),
+                )
+            })
+            .collect();
 
         let thumb = post.image.clone().map(|image| {
             let mut meta = if image.url.starts_with("https://www.patreon.com/media-u/v3/") {
@@ -211,6 +227,7 @@ pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutpu
             .tags(tags)
             .thumb(thumb)
             .comments(comments)
+            .collections(collections)
     }
 
     async fn save_file(
