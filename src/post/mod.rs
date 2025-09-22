@@ -10,12 +10,12 @@ use crate::{
     creator::sync_campaign,
     patreon::{comment::Comment, post::Post},
     CampaignPipelineOutput, Client, Config, FilesPipelineInput, Manager, PostsPipelineInput,
-    PostsPipelineOutput, User,
+    PostsPipelineOutput, Progress, User,
 };
 use chrono::DateTime;
 use file::PatreonFileMeta;
 use futures::{future::join_all, try_join};
-use log::{debug, error, info, trace};
+use log::{error, info, trace};
 use post_archiver::{
     importer::{post::UnsyncPost, UnsyncFileMeta, UnsyncTag},
     manager::{PostArchiverConnection, PostArchiverManager},
@@ -59,6 +59,7 @@ pub fn filter_posts(
 
 pub async fn list_posts(
     user: User,
+    pb: Progress,
     config: Config,
     client: Client,
     manager: Manager,
@@ -68,8 +69,6 @@ pub async fn list_posts(
 ) {
     while let Some(campaign) = campaign_pipeline.recv().await {
         info!("Loading posts of campaign {campaign}");
-        let mut total = 0;
-        let mut unsynced = 0;
 
         let mut next_url = Some(client.get_posts_url(&user, &campaign));
         while let Some(url) = next_url.take() {
@@ -79,9 +78,8 @@ pub async fn list_posts(
             };
             next_url = next;
 
-            total += posts.len();
             let posts = filter_posts(&config, &*manager.lock().await, posts);
-            unsynced += posts.len();
+            pb.posts.inc_length(posts.len() as u64);
 
             let posts = posts
                 .into_iter()
@@ -104,18 +102,18 @@ pub async fn list_posts(
 
             join_all(posts).await;
         }
-
-        info!("Posts of campaign {campaign} loaded: {unsynced}/{total} unsynced posts");
+        pb.creators.inc(1);
     }
+    info!(
+        "Creators processed: {}/{} creators",
+        pb.creators.position(),
+        pb.creators.length().unwrap_or_default()
+    );
 }
 
-pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutput) {
-    let mut total = 0;
-    let mut success = 0;
+pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutput, pb: Progress) {
     let mut authors = HashMap::new();
     'post: while let Some((post, comments, rx)) = posts_pipeline.recv().await {
-        total += 1;
-
         let mut manager = manager.lock().await;
 
         let platform = manager.import_platform("patreon".to_string()).unwrap();
@@ -162,10 +160,14 @@ pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutpu
         tx.commit().unwrap();
         info!("Post imported: {title}");
 
-        success += 1;
+        pb.posts.inc(1);
     }
 
-    info!("Posts imported: {success}/{total} posts");
+    info!(
+        "Posts imported: {}/{} posts",
+        pb.posts.position(),
+        pb.posts.length().unwrap_or_default()
+    );
     fn conversion_post(
         platform: PlatformId,
         author: AuthorId,

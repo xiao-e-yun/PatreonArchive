@@ -9,14 +9,14 @@ use post_archiver::{
 use post_archiver_utils::Result;
 
 use crate::{
-    patreon::{Campaign, Member},
-    CampaignPipelineInput, Client, Config, User,
+    patreon::{Campaign, Member}, CampaignPipelineInput, Client, Config, Progress, User
 };
 
 pub async fn list_members(
     user: User,
     config: Config,
     client: Client,
+    pb: Progress,
     campaign_pipeline: CampaignPipelineInput,
 ) {
     info!("Loading Member List");
@@ -39,6 +39,7 @@ pub async fn list_members(
         display_members(&members);
     }
 
+    pb.creators.inc_length(filtered as u64);
     for member in members {
         let campaign = member.campaign.id.clone();
         campaign_pipeline.send(campaign).unwrap();

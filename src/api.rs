@@ -1,5 +1,5 @@
 use jsonapi_deserialize::{deserialize_document, Document, JsonApiDeserialize};
-use log::{debug, trace};
+use log::trace;
 use post_archiver_utils::{ArchiveClient, Error, Result};
 use reqwest::{
     header::{self, HeaderMap, HeaderValue},

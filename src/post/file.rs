@@ -1,15 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 use futures::future::try_join_all;
-use log::error;
+use log::{debug, error};
 use mime_guess::MimeGuess;
 use post_archiver::importer::file_meta::UnsyncFileMeta;
 use serde_json::json;
 use tokio::{sync::Semaphore, task::JoinSet};
 
-use crate::{api::PatreonClient, patreon::post::Media, Config, FilesPipelineOutput};
+use crate::{api::PatreonClient, patreon::post::Media, Config, FilesPipelineOutput, Progress};
 
-pub async fn download_files(config: Config, mut files_pipeline: FilesPipelineOutput) {
+pub async fn download_files(config: Config, mut files_pipeline: FilesPipelineOutput, pb: Progress) {
     let mut tasks = JoinSet::new();
     let client = PatreonClient::new(&config);
 
@@ -19,14 +19,17 @@ pub async fn download_files(config: Config, mut files_pipeline: FilesPipelineOut
             tx.send(Default::default()).unwrap();
             continue;
         }
+        pb.files.inc_length(urls.len() as u64);
 
         let client = client.clone();
         let semaphore = semaphore.clone();
+        let file_pb = pb.files.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await.unwrap();
             match try_join_all(urls.into_iter().map(|url| async {
                 let download_path = client.download(&url);
                 let result = download_path.await.map(|path| (url, path));
+                file_pb.inc(1);
                 result.inspect_err(|e| error!("Failed to download file: {e}"))
             }))
             .await
@@ -38,6 +41,12 @@ pub async fn download_files(config: Config, mut files_pipeline: FilesPipelineOut
     }
 
     tasks.join_all().await;
+
+    debug!(
+        "Files processed: {}/{} files",
+        pb.files.position(),
+        pb.files.length().unwrap_or_default()
+    );
 }
 
 pub trait PatreonFileMeta
@@ -52,8 +61,7 @@ where
 impl PatreonFileMeta for UnsyncFileMeta<String> {
     fn from_url(url: String) -> Self {
         if url.starts_with("https://www.patreon.com/media-u/v3/") {
-
-            return UnsyncFileMeta::new("thumb.jpg".to_string(), "image/jpeg".to_string(), url)
+            return UnsyncFileMeta::new("thumb.jpg".to_string(), "image/jpeg".to_string(), url);
         };
 
         let mut filename = url.split('/').next_back().unwrap().to_string();

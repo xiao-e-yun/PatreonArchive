@@ -8,6 +8,7 @@ mod patreon;
 use std::{collections::HashMap, error::Error, rc::Rc};
 
 use api::PatreonClient;
+use config::ProgressSet;
 use creator::list_members;
 use log::{info, warn};
 use patreon::{comment::Comment, post::Post};
@@ -48,10 +49,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Connecting to PostArchiver");
     let manager = PostArchiverManager::open_or_create(config.output())?;
+    let progress = ProgressSet::new(&config);
 
-    PatreonSystem::new(Rc::new(Mutex::new(manager)), config, client, user)
+    PatreonSystem::new(Rc::new(Mutex::new(manager)), config, client, user, progress)
         .execute()
         .await;
+
+    info!("All done!");
     Ok(())
 }
 
@@ -67,6 +71,7 @@ define_tasks! {
         Config: config::Config,
         Client: PatreonClient,
         User: patreon::User,
+        Progress: ProgressSet,
     }
     tasks {
         list_members,

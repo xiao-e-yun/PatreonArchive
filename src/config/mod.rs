@@ -3,7 +3,9 @@ pub mod save_type;
 use clap::{arg, Parser};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use dotenv::dotenv;
-use std::path::PathBuf;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif_log_bridge::LogWrapper;
+use std::{ops::Deref, path::PathBuf};
 
 use crate::patreon::{post::Post, Member};
 
@@ -32,6 +34,8 @@ pub struct Config {
     skip_free: bool,
     #[command(flatten)]
     pub verbose: Verbosity<InfoLevel>,
+    #[clap(skip)]
+    pub multi: MultiProgress,
 }
 
 impl Config {
@@ -42,10 +46,13 @@ impl Config {
     }
     /// Create a logger with the configured verbosity level
     pub fn init_logger(&self) {
-        env_logger::Builder::new()
-            .filter_level(self.verbose.log_level_filter())
-            .format_target(false)
-            .init();
+        let mut logger = env_logger::Builder::new();
+        logger.filter_level(self.verbose.log_level_filter())
+            .format_target(false);
+
+        LogWrapper::new(self.multi.clone(), logger.build())
+            .try_init()
+            .unwrap();
     }
     /// Get the session cookie
     pub fn session(&self) -> String {
@@ -92,5 +99,55 @@ impl Config {
 
     pub fn force(&self) -> bool {
         self.force
+    }
+
+    pub fn progress(&self, prefix: &'static str) -> Progress {
+        Progress::new(&self.multi, prefix)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Progress(ProgressBar);
+
+impl Progress {
+    pub fn new(multi: &MultiProgress, prefix: &'static str) -> Self {
+        Self(
+            multi.add(
+                ProgressBar::new(0)
+                    .with_style(Self::style())
+                    .with_prefix(format!("[{prefix}]")),
+            ),
+        )
+    }
+
+    fn style() -> ProgressStyle {
+        ProgressStyle::with_template("{prefix:.bold.dim} {wide_bar:.cyan/blue} {pos:>3}/{len:3}")
+            .unwrap()
+            .progress_chars("#>-")
+    }
+}
+
+impl Deref for Progress {
+    type Target = ProgressBar;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProgressSet {
+    pub creators: Progress,
+    pub posts: Progress,
+    pub files: Progress,
+}
+
+impl ProgressSet {
+    pub fn new(config: &Config) -> Self {
+        Self {
+            creators: config.progress("creators"),
+            posts: config.progress("posts"),
+            files: config.progress("files"),
+        }
     }
 }
