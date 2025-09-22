@@ -9,12 +9,16 @@ use serde_json::Value;
 
 use crate::post::file::PatreonFileMeta;
 
+use super::Campaign;
+
 #[derive(Debug, Clone, JsonApiDeserialize)]
 #[json_api(rename_all = "snake_case")]
 pub struct Post {
     pub id: String,
     pub comment_count: u32,
     pub current_user_can_view: bool,
+    #[json_api(relationship = "single", resource = "Campaign")]
+    pub campaign: Arc<Campaign>,
     pub image: Option<Image>,
     pub min_cents_pledged_to_view: Option<u32>,
     /// UNKNOWN

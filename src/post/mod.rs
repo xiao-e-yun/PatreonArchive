@@ -1,112 +1,177 @@
 mod body;
 pub mod file;
 
-use std::collections::HashMap;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    path::PathBuf,
+};
 
 use crate::{
-    api::patreon::PatreonClient,
-    config::Config,
-    patreon::{comment::Comment, post::Post, User},
+    creator::sync_campaign,
+    patreon::{comment::Comment, post::Post},
+    CampaignPipelineOutput, Client, Config, FilesPipelineInput, Manager, PostsPipelineInput,
+    PostsPipelineOutput, User,
 };
 use chrono::DateTime;
-use file::{download_files, PatreonFileMeta, UnsyncFileMetaWithUrl};
-use log::info;
+use file::PatreonFileMeta;
+use futures::{future::join_all, try_join};
+use log::{debug, error, info, trace};
 use post_archiver::{
-    importer::{post::UnsyncPost, UnsyncTag},
+    importer::{post::UnsyncPost, UnsyncFileMeta, UnsyncTag},
     manager::{PostArchiverConnection, PostArchiverManager},
     AuthorId, PlatformId,
 };
-use rusqlite::Connection;
+use post_archiver_utils::Result;
 use serde_json::json;
+use tempfile::TempPath;
+use tokio::{
+    fs::{create_dir_all, File, OpenOptions},
+    io,
+    sync::oneshot,
+};
 
-pub fn filter_unsynced_posts(
-    manager: &mut PostArchiverManager<impl PostArchiverConnection>,
-    mut posts: Vec<(Post, Vec<Comment>)>,
-) -> Result<Vec<(Post, Vec<Comment>)>, rusqlite::Error> {
-    posts.retain(|(post, _)| {
-        let post_updated = manager
-            .find_post_with_updated(
-                &post.url,
-                &DateTime::parse_from_rfc3339(&post.published_at)
-                    .unwrap()
-                    .to_utc(),
-            )
-            .expect("Failed to check post");
-        post_updated.is_none()
-    });
-    Ok(posts)
+pub fn filter_posts(
+    config: &Config,
+    manager: &PostArchiverManager<impl PostArchiverConnection>,
+    posts: Vec<Post>,
+) -> Vec<Post> {
+    posts
+        .into_iter()
+        .filter(|post| config.filter_post(post))
+        .filter(|post| {
+            if config.force() {
+                return true;
+            }
+
+            let updated = DateTime::parse_from_rfc3339(&post.published_at)
+                .unwrap()
+                .to_utc();
+            manager
+                .find_post_with_updated(&post.url, &updated)
+                .unwrap_or_else(|err| {
+                    error!("Failed to check post {}: {}", &post.url, err);
+                    None
+                })
+                .is_none()
+        })
+        .collect()
 }
 
-pub async fn get_posts(
-    config: &Config,
-    user: &User,
-    campaign: &str,
-) -> Result<Vec<(Post, Vec<Comment>)>, Box<dyn std::error::Error>> {
-    let client = PatreonClient::new(config);
+pub async fn list_posts(
+    user: User,
+    config: Config,
+    client: Client,
+    manager: Manager,
+    posts_pipeline: PostsPipelineInput,
+    files_pipeline: FilesPipelineInput,
+    mut campaign_pipeline: CampaignPipelineOutput,
+) {
+    while let Some(campaign) = campaign_pipeline.recv().await {
+        info!("Loading posts of campaign {campaign}");
+        let mut total = 0;
+        let mut unsynced = 0;
 
-    let mut posts = client.get_posts(user, campaign).await?;
-    posts.retain(|item| config.filter_post(item));
+        let mut next_url = Some(client.get_posts_url(&user, &campaign));
+        while let Some(url) = next_url.take() {
+            let Ok((posts, next)) = client.get_posts(&url).await else {
+                error!("Failed to load posts of campaign {campaign}");
+                break;
+            };
+            next_url = next;
 
-    const BATCH_SIZE: usize = 10;
-    const BATCH_DELAY_MS: u64 = 200;
+            total += posts.len();
+            let posts = filter_posts(&config, &*manager.lock().await, posts);
+            unsynced += posts.len();
 
-    let mut comments = Vec::with_capacity(posts.len());
+            let posts = posts
+                .into_iter()
+                .map(async |post| {
+                    let comments = match post.comment_count {
+                        0 => vec![],
+                        _ => client.get_comments(&post.id).await.unwrap_or_else(|err| {
+                            error!("Failed to get comments of post {}: {}", &post.id, err);
+                            vec![]
+                        }),
+                    };
 
-    for chunk in posts.chunks(BATCH_SIZE) {
-        let comment_futures = chunk
-            .iter()
-            .map(|e| client.get_comments(&e.id))
-            .collect::<Vec<_>>();
+                    let (tx, rx) = oneshot::channel();
 
-        let batch_comments = futures::future::join_all(comment_futures).await;
-        comments.extend(batch_comments);
+                    let contents = post.files();
+                    files_pipeline.send((contents, tx)).unwrap();
+                    posts_pipeline.send((post, comments, rx)).unwrap();
+                })
+                .collect::<Vec<_>>();
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(BATCH_DELAY_MS)).await;
+            join_all(posts).await;
+        }
+
+        info!("Posts of campaign {campaign} loaded: {unsynced}/{total} unsynced posts");
+    }
+}
+
+pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutput) {
+    let mut total = 0;
+    let mut success = 0;
+    let mut authors = HashMap::new();
+    'post: while let Some((post, comments, rx)) = posts_pipeline.recv().await {
+        total += 1;
+
+        let mut manager = manager.lock().await;
+
+        let platform = manager.import_platform("patreon".to_string()).unwrap();
+
+        let campaign = post.campaign.clone();
+        let campaign_id = campaign.id.clone();
+        let author = match authors.entry(campaign_id) {
+            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+            Entry::Vacant(vacant_entry) => match sync_campaign(&manager, platform, &campaign) {
+                Ok(author) => *vacant_entry.insert(author),
+                Err(e) => {
+                    error!("Failed to sync creator for post: {} {:?}", post.id, e);
+                    continue;
+                }
+            },
+        };
+
+        let tx = manager.transaction().unwrap();
+
+        let title = post.title.clone();
+        let post = conversion_post(platform, author, post, comments);
+        let source = post.source.clone();
+
+        let Ok((_, _, _, files)) = tx.import_post(post, true) else {
+            error!("Failed to import post: {source}");
+            continue;
+        };
+
+        let Ok(mut file_map) = rx.await else {
+            error!("Failed to receive file map for post: {source}");
+            continue;
+        };
+
+        let mut create_dir = true;
+        for (path, url) in files {
+            if let Err(e) = save_file(&mut file_map, &path, &url, create_dir).await {
+                error!("Failed to save file {}: {}", path.display(), e);
+                error!("Aborting post import due to file errors: {source}");
+                continue 'post;
+            };
+            create_dir = false;
+        }
+
+        tx.commit().unwrap();
+        info!("Post imported: {title}");
+
+        success += 1;
     }
 
-    let result = posts
-        .into_iter()
-        .zip(comments)
-        .map(|(post, res)| {
-            let comments = res.expect("failed to get comments of post");
-            (post, comments)
-        })
-        .collect();
-
-    Ok(result)
-}
-
-pub async fn sync_posts(
-    manager: &mut PostArchiverManager<Connection>,
-    config: &Config,
-    author: AuthorId,
-    posts: Vec<(Post, Vec<Comment>)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let manager = manager.transaction()?;
-    let total_posts = posts.len();
-
-    let platform = manager.import_platform("patreon".to_string())?;
-
-    let posts = posts
-        .into_iter()
-        .map(|(post, comments)| conversion_post(platform, author, post, comments))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let (_posts, post_files) = manager.import_posts(posts, true)?;
-
-    let client = PatreonClient::new(config);
-    download_files(post_files, &client).await?;
-
-    manager.commit()?;
-
-    info!("{} total", total_posts);
-
+    info!("Posts imported: {success}/{total} posts");
     fn conversion_post(
         platform: PlatformId,
         author: AuthorId,
         post: Post,
         comments: Vec<Comment>,
-    ) -> Result<(UnsyncPost, HashMap<String, String>), Box<rusqlite::Error>> {
+    ) -> UnsyncPost<String> {
         let mut tags = vec![];
         if post.required_cents() == 0 {
             tags.push(UnsyncTag {
@@ -116,35 +181,65 @@ pub async fn sync_posts(
         }
 
         let thumb = post.image.clone().map(|image| {
-            let mut meta = UnsyncFileMetaWithUrl::from_url(image.url);
-            meta.0.extra = HashMap::from([
-                ("width".to_string(), json!(1200)),
-                ("height".to_string(), json!(630)),
+            let mut meta = if image.url.starts_with("https://www.patreon.com/media-u/v3/") {
+                // default thumb url
+                UnsyncFileMeta::new("thumb.jpg".to_string(), "image/jpeg".to_string(), image.url)
+            } else {
+                UnsyncFileMeta::from_url(image.url)
+            };
+            meta.extra = HashMap::from([
+                ("width".to_string(), json!(image.width)),
+                ("height".to_string(), json!(image.height)),
             ]);
             meta
         });
 
-        let (content, mut files) = post.content_with_files();
-
-        if let Some(thumb) = &thumb {
-            files.insert(thumb.0.filename.clone(), thumb.1.clone());
-        }
+        let content = post.contents();
 
         let comments = comments.into_iter().map(|c| c.into()).collect();
 
         let published = DateTime::parse_from_rfc3339(&post.published_at)
             .unwrap()
             .to_utc();
-        let post = UnsyncPost::new(platform, post.url, post.title, content)
+
+        UnsyncPost::new(platform, post.url, post.title, content)
             .published(published)
             .updated(published)
             .authors(vec![author])
             .tags(tags)
-            .thumb(thumb.map(|e| e.0))
-            .comments(comments);
-
-        Ok((post, files))
+            .thumb(thumb)
+            .comments(comments)
     }
 
-    Ok(())
+    async fn save_file(
+        file_map: &mut HashMap<String, TempPath>,
+        path: &PathBuf,
+        url: &str,
+        create_dir: bool,
+    ) -> Result<()> {
+        if create_dir {
+            let path = path.parent().unwrap();
+            create_dir_all(path).await?;
+        }
+
+        let temp = file_map.remove(url).ok_or(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("File not found in map: {url}"),
+        ))?;
+
+        let mut open_options = OpenOptions::new();
+        let (mut src, mut dst) = try_join!(
+            File::open(&temp),
+            open_options
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&path)
+        )?;
+
+        io::copy(&mut src, &mut dst).await?;
+        trace!("File saved: {url} -> {}", path.display());
+
+        Ok(())
+    }
 }

@@ -1,38 +1,43 @@
-use std::{collections::HashMap, ops::Deref, path::PathBuf};
+use std::{collections::HashMap, sync::Arc};
 
-use futures::future::join_all;
+use futures::future::try_join_all;
 use log::error;
 use mime_guess::MimeGuess;
 use post_archiver::importer::file_meta::UnsyncFileMeta;
 use serde_json::json;
+use tokio::{sync::Semaphore, task::JoinSet};
 
-use crate::{api::patreon::PatreonClient, patreon::post::Media};
+use crate::{api::PatreonClient, patreon::post::Media, Config, FilesPipelineOutput};
 
-pub async fn download_files(
-    files: Vec<(PathBuf, String)>,
-    client: &PatreonClient,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut tasks = vec![];
+pub async fn download_files(config: Config, mut files_pipeline: FilesPipelineOutput) {
+    let mut tasks = JoinSet::new();
+    let client = PatreonClient::new(&config);
 
-    let mut last_folder = PathBuf::new();
-    for (path, url) in files {
-        // Create folder if it doesn't exist
-        let folder = path.parent().unwrap();
-        if last_folder != folder {
-            last_folder = folder.to_path_buf();
-            tokio::fs::create_dir_all(folder).await?;
+    let semaphore = Arc::new(Semaphore::new(3));
+    while let Some((urls, tx)) = files_pipeline.recv().await {
+        if urls.is_empty() {
+            tx.send(Default::default()).unwrap();
+            continue;
         }
 
         let client = client.clone();
-        tasks.push(tokio::spawn(async move {
-            if let Err(e) = client.download(&url, path.clone()).await {
-                error!("Failed to download {} to {}: {}", url, path.display(), e);
+        let semaphore = semaphore.clone();
+        tasks.spawn(async move {
+            let _permit = semaphore.acquire().await.unwrap();
+            match try_join_all(urls.into_iter().map(|url| async {
+                let download_path = client.download(&url);
+                let result = download_path.await.map(|path| (url, path));
+                result.inspect_err(|e| error!("Failed to download file: {e}"))
+            }))
+            .await
+            {
+                Ok(urls) => tx.send(urls.into_iter().collect()).unwrap(),
+                Err(e) => error!("Failed to receive file URLs: {e}"),
             }
-        }));
+        });
     }
 
-    join_all(tasks).await;
-    Ok(())
+    tasks.join_all().await;
 }
 
 pub trait PatreonFileMeta
@@ -44,33 +49,24 @@ where
     fn from_audio_thumb(image: Media, filename: String) -> Self;
 }
 
-pub struct UnsyncFileMetaWithUrl(pub UnsyncFileMeta, pub String);
-impl Deref for UnsyncFileMetaWithUrl {
-    type Target = UnsyncFileMeta;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl PatreonFileMeta for UnsyncFileMetaWithUrl {
+impl PatreonFileMeta for UnsyncFileMeta<String> {
     fn from_url(url: String) -> Self {
+        if url.starts_with("https://www.patreon.com/media-u/v3/") {
+
+            return UnsyncFileMeta::new("thumb.jpg".to_string(), "image/jpeg".to_string(), url)
+        };
+
         let mut filename = url.split('/').next_back().unwrap().to_string();
         filename.truncate(filename.find('?').unwrap_or(url.len()));
 
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
-        let extra = Default::default();
 
-        Self(UnsyncFileMeta {
-            filename,
-            mime,
-            extra,
-        }, url)
+        UnsyncFileMeta::new(filename, mime, url)
     }
     fn from_media(media: Media) -> Self {
-        let filename = media.file_name.unwrap_or_else(|| {
+        let mut filename = media.file_name.unwrap_or_else(|| {
             media
                 .download_url
                 .split('/')
@@ -78,6 +74,11 @@ impl PatreonFileMeta for UnsyncFileMetaWithUrl {
                 .unwrap()
                 .to_string()
         });
+
+        if filename.starts_with("https://www.patreon.com/media-u/v3/") {
+            filename = "thumb.jpg".to_string();
+        };
+
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
@@ -95,11 +96,12 @@ impl PatreonFileMeta for UnsyncFileMetaWithUrl {
             extra.insert("duration_s".to_string(), json!(duration_s));
         }
 
-        Self(UnsyncFileMeta {
+        UnsyncFileMeta {
             filename,
             mime,
             extra,
-        }, media.download_url)
+            data: media.download_url,
+        }
     }
     fn from_audio_thumb(media: Media, filename: String) -> Self {
         let mime = MimeGuess::from_path(&filename)
@@ -114,10 +116,11 @@ impl PatreonFileMeta for UnsyncFileMetaWithUrl {
             extra.insert("height".to_string(), json!(dimensions.h));
         }
 
-        Self(UnsyncFileMeta {
+        UnsyncFileMeta {
             filename,
             mime,
             extra,
-        }, media.download_url)
+            data: media.download_url,
+        }
     }
 }

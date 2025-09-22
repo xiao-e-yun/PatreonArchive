@@ -5,61 +5,73 @@ mod post;
 
 mod patreon;
 
-use std::error::Error;
+use std::{collections::HashMap, error::Error, rc::Rc};
 
-use config::Config;
-use creator::{display_members, get_user_and_members, sync_campaign};
+use api::PatreonClient;
+use creator::list_members;
 use log::{info, warn};
-use post::{filter_unsynced_posts, get_posts, sync_posts};
+use patreon::{comment::Comment, post::Post};
+use plyne::define_tasks;
+use post::{file::download_files, list_posts, sync_posts};
 use post_archiver::{manager::PostArchiverManager, utils::VERSION};
+use post_archiver_utils::display_metadata;
+use tempfile::TempPath;
+use tokio::sync::{oneshot, Mutex};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let config = Config::parse();
+    let config = config::Config::parse();
     config.init_logger();
 
-    info!("# Patreon Archive #");
-    info!("");
-    info!("==================================");
-    info!("PostArchiver version: v{}", VERSION);
-    info!("Overwrite: {}", config.overwrite());
-    info!("Output: {}", config.output().display());
-    info!("==================================");
+    display_metadata(
+        "Patreon Archive",
+        &[
+            ("PostArchiver", VERSION),
+            ("Output", config.output().to_str().unwrap()),
+        ],
+    );
 
     if !config.output().exists() {
         warn!("Creating output folder");
         std::fs::create_dir_all(config.output())?;
     }
 
+    let client = PatreonClient::new(&config);
+
+    info!("Checking User Data");
+    let user = client.get_current_user_id().await?;
+    info!("= User ===========================");
+    info!("Name: {}", user.full_name);
+    info!("Id: {}", user.id);
+    info!("==================================");
+    info!("");
+
     info!("Connecting to PostArchiver");
-    let mut manager = PostArchiverManager::open_or_create(config.output())?;
+    let manager = PostArchiverManager::open_or_create(config.output())?;
 
-    let (user, members) = get_user_and_members(&config).await?;
-    display_members(&members);
-
-    info!("Syncing Campaign List");
-    let authors = sync_campaign(&mut manager, members)?;
-
-    info!("Loading Members Post");
-    for (author, name, campaign_id) in authors {
-        info!("{}", &name);
-        let mut posts = get_posts(&config, &user, &campaign_id).await?;
-
-        let total_post = posts.len();
-        let mut posts_count_info = format!("{} posts", total_post);
-        if !config.force() {
-            posts = filter_unsynced_posts(&mut manager, posts)?;
-            posts_count_info += &format!(" ({} unsynced)", posts.len());
-        };
-        info!(" + {}", posts_count_info);
-
-        if !posts.is_empty() {
-            sync_posts(&mut manager, &config, author, posts).await?;
-        }
-
-        info!("");
-    }
-
-    info!("All done!");
+    PatreonSystem::new(Rc::new(Mutex::new(manager)), config, client, user)
+        .execute()
+        .await;
     Ok(())
+}
+
+define_tasks! {
+    PatreonSystem
+    pipelines {
+        CampaignPipeline: String,
+        PostsPipeline: (Post, Vec<Comment>, oneshot::Receiver<HashMap<String, TempPath>>),
+        FilesPipeline: (Vec<String>, oneshot::Sender<HashMap<String, TempPath>>),
+    }
+    vars {
+        Manager: Rc<Mutex<PostArchiverManager>>,
+        Config: config::Config,
+        Client: PatreonClient,
+        User: patreon::User,
+    }
+    tasks {
+        list_members,
+        list_posts,
+        download_files,
+        sync_posts,
+    }
 }

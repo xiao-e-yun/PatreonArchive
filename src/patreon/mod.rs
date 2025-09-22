@@ -33,8 +33,6 @@ impl Member {
 #[json_api(rename_all = "snake_case")]
 pub struct Campaign {
     pub id: String,
-    #[allow(unused)]
-    pub is_active: bool,
     pub name: String,
     pub url: String,
 }

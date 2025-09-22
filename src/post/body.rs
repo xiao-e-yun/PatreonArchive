@@ -1,15 +1,11 @@
-use std::collections::HashMap;
-
 use htmd::{Element, HtmlToMarkdown};
-use post_archiver::importer::UnsyncContent;
+use log::error;
+use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
 
-use crate::{
-    patreon::post::Post,
-    post::file::{PatreonFileMeta, UnsyncFileMetaWithUrl},
-};
+use crate::{patreon::post::Post, post::file::PatreonFileMeta};
 
 impl Post {
-    pub fn content_with_files(&self) -> (Vec<UnsyncContent>, HashMap<String, String>) {
+    pub fn contents(&self) -> Vec<UnsyncContent<String>> {
         let img_handler = move |_: Element| -> Option<String> { None }; // skip images
 
         let htmd_converter = HtmlToMarkdown::builder()
@@ -20,16 +16,13 @@ impl Post {
             UnsyncContent::Text(
                 htmd_converter
                     .convert(html)
-                    .inspect_err(|err| {
-                        log::error!("Failed to convert HTML to Markdown: {}", err);
-                    })
-                    .unwrap_or(html)
+                    .inspect_err(|err| error!("Failed to convert HTML to Markdown: {err}"))
+                    .unwrap_or(html.clone())
                     .replace('\n', "<br>"),
             )
         });
 
         let mut contents = Vec::new();
-        let mut files = HashMap::new();
 
         let audio_id = self.audio.as_deref().map(|e| &e.id);
         let audio_preview_id = self.audio_preview.as_deref().map(|e| &e.id);
@@ -53,9 +46,8 @@ impl Post {
             let file_name = &audio.file_name;
             audio_file_name = Some(file_name.as_ref().unwrap().rsplit_once('.').unwrap().0);
 
-            let file = UnsyncFileMetaWithUrl::from_media(audio.clone());
-            files.insert(file.0.filename.clone(), file.1);
-            contents.push(UnsyncContent::File(file.0));
+            let file = UnsyncFileMeta::from_media(audio.clone());
+            contents.push(UnsyncContent::File(file));
         }
 
         for media in filtered_media.into_iter() {
@@ -77,16 +69,14 @@ impl Post {
                     .unwrap()
                     .1
                     .to_string();
-                let file = UnsyncFileMetaWithUrl::from_audio_thumb(
+                let file = UnsyncFileMeta::from_audio_thumb(
                     media,
                     format!("{}.thumb.{}", audio_file_name.unwrap(), ext),
                 );
-                files.insert(file.0.filename.clone(), file.1);
-                contents.push(UnsyncContent::File(file.0));
+                contents.push(UnsyncContent::File(file));
             } else {
-                let file = UnsyncFileMetaWithUrl::from_media(media);
-                files.insert(file.0.filename.clone(), file.1);
-                contents.push(UnsyncContent::File(file.0));
+                let file = UnsyncFileMeta::from_media(media);
+                contents.push(UnsyncContent::File(file));
             }
         }
 
@@ -137,6 +127,17 @@ impl Post {
             contents.push(content);
         }
 
-        (contents, files)
+        contents
+    }
+
+    pub fn files(&self) -> Vec<String> {
+        self.contents()
+            .into_iter()
+            .filter_map(|content| match content {
+                UnsyncContent::File(file) => Some(file.data),
+                _ => None,
+            })
+            .chain(self.image.iter().map(|e| e.url.clone()))
+            .collect()
     }
 }

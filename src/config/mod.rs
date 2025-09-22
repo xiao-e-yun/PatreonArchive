@@ -18,9 +18,6 @@ pub struct Config {
     /// Force download
     #[arg(short, long)]
     force: bool,
-    /// Overwrite existing files
-    #[arg(short, long)]
-    overwrite: bool,
     /// Whitelist of creator IDs
     #[arg(short, long, num_args = 0..)]
     whitelist: Vec<String>,
@@ -28,7 +25,7 @@ pub struct Config {
     #[arg(short, long, num_args = 0..)]
     blacklist: Vec<String>,
     /// Limit download concurrency
-    #[arg(long, default_value = "5")]
+    #[arg(long, default_value = "20")]
     limit: usize,
     /// Skip free post
     #[arg(long, name = "skip-free")]
@@ -57,9 +54,6 @@ impl Config {
         } else {
             format!("session_id={}", self.session)
         }
-    }
-    pub fn overwrite(&self) -> bool {
-        self.overwrite
     }
 
     pub fn output(&self) -> &PathBuf {
