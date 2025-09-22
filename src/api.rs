@@ -83,7 +83,7 @@ impl PatreonClient {
 
     pub fn get_posts_url(&self, user: &User, campaign: &str) -> String {
         format!(
-            "https://www.patreon.com/api/posts?include=campaign,media,audio.null,audio_preview.null,poll.null,poll.choices&fields[post]=comment_count,content,current_user_can_view,min_cents_pledged_to_view,embed,image,post_metadata,published_at,post_type,title,url&fields[campaign]=name,url&fields[media]=id,image_urls,download_url,metadata,file_name&sort=-published_at&filter[is_draft]=false&filter[accessible_by_user_id]={}&filter[contains_exclusive_posts]=true&json-api-use-default-includes=false&json-api-version=1.0&filter[campaign_id]={}",
+            "https://www.patreon.com/api/posts?include=campaign,media,audio.null,audio_preview.null,poll.null,poll.choices,content_unlock_options.reward,user_defined_tags&fields[post]=comment_count,content,current_user_can_view,embed,image,post_metadata,published_at,post_type,title,url&fields[campaign]=name,url&fields[media]=id,image_urls,download_url,metadata,file_name&sort=-published_at&filter[is_draft]=false&filter[accessible_by_user_id]={}&filter[contains_exclusive_posts]=true&json-api-use-default-includes=false&json-api-version=1.0&filter[campaign_id]={}",
             user.id,
             campaign
         )
