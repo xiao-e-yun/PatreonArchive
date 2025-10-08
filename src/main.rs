@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 mod api;
 mod config;
 mod creator;
@@ -5,13 +7,13 @@ mod post;
 
 mod patreon;
 
-use std::{collections::HashMap, error::Error, rc::Rc};
+use std::{collections::HashMap, error::Error};
 
 use api::PatreonClient;
-use config::ProgressSet;
+use config::{Config, ProgressSet};
 use creator::list_members;
 use log::{info, warn};
-use patreon::{comment::Comment, post::Post};
+use patreon::{comment::Comment, post::Post, User};
 use plyne::define_tasks;
 use post::{file::download_files, list_posts, sync_posts};
 use post_archiver::{manager::PostArchiverManager, utils::VERSION};
@@ -51,7 +53,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let manager = PostArchiverManager::open_or_create(config.output())?;
     let progress = ProgressSet::new(&config);
 
-    PatreonSystem::new(Rc::new(Mutex::new(manager)), config, client, user, progress)
+    PatreonSystem::new(Mutex::new(manager), config, client, user, progress)
         .execute()
         .await;
 
@@ -59,19 +61,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub type PostsEvent = (
+    Post,
+    Vec<Comment>,
+    oneshot::Receiver<HashMap<String, TempPath>>,
+);
+pub type FilesEvent = (Vec<String>, oneshot::Sender<HashMap<String, TempPath>>);
+
+pub type Manager = Mutex<PostArchiverManager>;
+
 define_tasks! {
     PatreonSystem
     pipelines {
-        CampaignPipeline: String,
-        PostsPipeline: (Post, Vec<Comment>, oneshot::Receiver<HashMap<String, TempPath>>),
-        FilesPipeline: (Vec<String>, oneshot::Sender<HashMap<String, TempPath>>),
+        campaign_pipeline: String,
+        posts_pipeline: PostsEvent,
+        files_pipeline: FilesEvent,
     }
     vars {
-        Manager: Rc<Mutex<PostArchiverManager>>,
-        Config: config::Config,
-        Client: PatreonClient,
-        User: patreon::User,
-        Progress: ProgressSet,
+        manager: Manager,
+        config: Config,
+        client: PatreonClient,
+        user: User,
+        progress_set: ProgressSet,
     }
     tasks {
         list_members,

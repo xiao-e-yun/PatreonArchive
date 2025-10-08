@@ -47,7 +47,8 @@ impl Config {
     /// Create a logger with the configured verbosity level
     pub fn init_logger(&self) {
         let mut logger = env_logger::Builder::new();
-        logger.filter_level(self.verbose.log_level_filter())
+        logger
+            .filter_level(self.verbose.log_level_filter())
             .format_target(false);
 
         LogWrapper::new(self.multi.clone(), logger.build())

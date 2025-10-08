@@ -7,15 +7,17 @@ use std::{
 };
 
 use crate::{
+    api::PatreonClient,
+    config::ProgressSet,
     creator::sync_campaign,
     patreon::{comment::Comment, post::Post},
-    CampaignPipelineOutput, Client, Config, FilesPipelineInput, Manager, PostsPipelineInput,
-    PostsPipelineOutput, Progress, User,
+    Config, FilesEvent, Manager, PostsEvent, User,
 };
 use chrono::DateTime;
 use file::PatreonFileMeta;
 use futures::{future::join_all, try_join};
 use log::{error, info, trace};
+use plyne::{Input, Output};
 use post_archiver::{
     importer::{post::UnsyncPost, UnsyncCollection, UnsyncFileMeta, UnsyncTag},
     manager::{PostArchiverConnection, PostArchiverManager},
@@ -58,19 +60,19 @@ pub fn filter_posts(
 }
 
 pub async fn list_posts(
-    user: User,
-    pb: Progress,
-    config: Config,
-    client: Client,
-    manager: Manager,
-    posts_pipeline: PostsPipelineInput,
-    files_pipeline: FilesPipelineInput,
-    mut campaign_pipeline: CampaignPipelineOutput,
+    mut campaign_pipeline: Output<String>,
+    posts_pipeline: Input<PostsEvent>,
+    files_pipeline: Input<FilesEvent>,
+    user: &User,
+    config: &Config,
+    client: &PatreonClient,
+    manager: &Manager,
+    pb: &ProgressSet,
 ) {
     while let Some(campaign) = campaign_pipeline.recv().await {
         info!("Loading posts of campaign {campaign}");
 
-        let mut next_url = Some(client.get_posts_url(&user, &campaign));
+        let mut next_url = Some(client.get_posts_url(user, &campaign));
         while let Some(url) = next_url.take() {
             let Ok((posts, next)) = client.get_posts(&url).await else {
                 error!("Failed to load posts of campaign {campaign}");
@@ -78,7 +80,7 @@ pub async fn list_posts(
             };
             next_url = next;
 
-            let posts = filter_posts(&config, &*manager.lock().await, posts);
+            let posts = filter_posts(config, &*manager.lock().await, posts);
             pb.posts.inc_length(posts.len() as u64);
 
             let posts = posts
@@ -111,7 +113,11 @@ pub async fn list_posts(
     );
 }
 
-pub async fn sync_posts(manager: Manager, mut posts_pipeline: PostsPipelineOutput, pb: Progress) {
+pub async fn sync_posts(
+    mut posts_pipeline: Output<PostsEvent>,
+    manager: &Manager,
+    pb: &ProgressSet,
+) {
     let mut authors = HashMap::new();
     'post: while let Some((post, comments, rx)) = posts_pipeline.recv().await {
         let mut manager = manager.lock().await;

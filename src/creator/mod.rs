@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use log::{error, info};
+use plyne::Input;
 use post_archiver::{
     importer::{UnsyncAlias, UnsyncAuthor},
     manager::PostArchiverManager,
@@ -9,18 +10,20 @@ use post_archiver::{
 use post_archiver_utils::Result;
 
 use crate::{
-    patreon::{Campaign, Member}, CampaignPipelineInput, Client, Config, Progress, User
+    api::PatreonClient,
+    config::{Config, ProgressSet},
+    patreon::{Campaign, Member, User},
 };
 
 pub async fn list_members(
-    user: User,
-    config: Config,
-    client: Client,
-    pb: Progress,
-    campaign_pipeline: CampaignPipelineInput,
+    campaign_pipeline: Input<String>,
+    user: &User,
+    config: &Config,
+    client: &PatreonClient,
+    pb: &ProgressSet,
 ) {
     info!("Loading Member List");
-    let Ok(mut members) = client.get_members(&user).await else {
+    let Ok(mut members) = client.get_members(user).await else {
         error!("Failed to load user data");
         return;
     };

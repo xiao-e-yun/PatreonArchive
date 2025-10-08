@@ -3,15 +3,20 @@ use std::{collections::HashMap, sync::Arc};
 use futures::future::try_join_all;
 use log::{debug, error};
 use mime_guess::MimeGuess;
+use plyne::Output;
 use post_archiver::importer::file_meta::UnsyncFileMeta;
 use serde_json::json;
 use tokio::{sync::Semaphore, task::JoinSet};
 
-use crate::{api::PatreonClient, patreon::post::Media, Config, FilesPipelineOutput, Progress};
+use crate::{api::PatreonClient, config::ProgressSet, patreon::post::Media, Config, FilesEvent};
 
-pub async fn download_files(config: Config, mut files_pipeline: FilesPipelineOutput, pb: Progress) {
+pub async fn download_files(
+    mut files_pipeline: Output<FilesEvent>,
+    config: &Config,
+    pb: &ProgressSet,
+) {
     let mut tasks = JoinSet::new();
-    let client = PatreonClient::new(&config);
+    let client = PatreonClient::new(config);
 
     let semaphore = Arc::new(Semaphore::new(3));
     while let Some((urls, tx)) = files_pipeline.recv().await {
