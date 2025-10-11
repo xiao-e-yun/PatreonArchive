@@ -1,10 +1,11 @@
 pub mod save_type;
 
-use clap::{arg, Parser};
+use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use dotenv::dotenv;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
+use serde::{Deserialize, Serialize};
 use std::{ops::Deref, path::PathBuf};
 
 use crate::patreon::{post::Post, Member};
@@ -17,9 +18,9 @@ pub struct Config {
     /// Which you path want to save
     #[arg(default_value = "./archive", env = "OUTPUT")]
     output: PathBuf,
-    /// Force download
-    #[arg(short, long)]
-    force: bool,
+    /// Archiving strategy
+    #[arg(long, default_value = "increment")]
+    strategy: Strategy,
     /// Whitelist of creator IDs
     #[arg(short, long, num_args = 0..)]
     whitelist: Vec<String>,
@@ -97,12 +98,30 @@ impl Config {
         accept
     }
 
-    pub const fn force(&self) -> bool {
-        self.force
+    pub const fn strategy(&self) -> Strategy {
+        self.strategy
     }
 
     pub fn progress(&self, prefix: &'static str) -> Progress {
         Progress::new(&self.multi, prefix)
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, ValueEnum, PartialEq, Eq, Default)]
+pub enum Strategy {
+    #[default]
+    Increment,
+    Full,
+    Force,
+}
+
+impl Strategy {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Increment => "increment",
+            Self::Full => "full",
+            Self::Force => "force",
+        }
     }
 }
 

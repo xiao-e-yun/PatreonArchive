@@ -458,6 +458,7 @@ dependencies = [
  "lock_api",
  "once_cell",
  "parking_lot_core 0.9.11",
+ "serde",
 ]
 
 [[package]]
@@ -1601,6 +1602,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap-verbosity-flag",
+ "dashmap",
  "dotenv",
  "env_logger",
  "futures",

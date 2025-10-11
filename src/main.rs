@@ -2,6 +2,7 @@
 
 mod api;
 mod config;
+mod context;
 mod creator;
 mod post;
 
@@ -11,9 +12,10 @@ use std::{collections::HashMap, error::Error};
 
 use api::PatreonClient;
 use config::{Config, ProgressSet};
+use context::Context;
 use creator::list_members;
 use log::{info, warn};
-use patreon::{comment::Comment, post::Post, User};
+use patreon::{comment::Comment, post::Post, Member, User};
 use plyne::define_tasks;
 use post::{file::download_files, list_posts, sync_posts};
 use post_archiver::{manager::PostArchiverManager, utils::VERSION};
@@ -30,6 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "Patreon Archive",
         &[
             ("PostArchiver", VERSION),
+            ("Strategy", config.strategy().as_str()),
             ("Output", config.output().to_str().unwrap()),
         ],
     );
@@ -51,13 +54,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Connecting to PostArchiver");
     let manager = PostArchiverManager::open_or_create(config.output())?;
+
+    let context = context::Context::load(&manager);
+    let manager = Mutex::new(manager);
+
     let progress = ProgressSet::new(&config);
 
-    PatreonSystem::new(Mutex::new(manager), config, client, user, progress)
+    let PatreonSystemContext {
+        context, manager, ..
+    } = PatreonSystem::new(manager, config, client, user, context.clone(), progress)
         .execute()
         .await;
 
     info!("All done!");
+
+    context.save(&*manager.lock().await);
     Ok(())
 }
 
@@ -73,7 +84,7 @@ pub type Manager = Mutex<PostArchiverManager>;
 define_tasks! {
     PatreonSystem
     pipelines {
-        campaign_pipeline: String,
+        campaign_pipeline: Member,
         posts_pipeline: PostsEvent,
         files_pipeline: FilesEvent,
     }
@@ -82,6 +93,7 @@ define_tasks! {
         config: Config,
         client: PatreonClient,
         user: User,
+        context: Context,
         progress_set: ProgressSet,
     }
     tasks {

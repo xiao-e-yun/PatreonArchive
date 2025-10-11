@@ -8,15 +8,16 @@ use std::{
 
 use crate::{
     api::PatreonClient,
-    config::ProgressSet,
+    config::{ProgressSet, Strategy},
+    context::Context,
     creator::sync_campaign,
-    patreon::{comment::Comment, post::Post},
+    patreon::{comment::Comment, post::Post, Member},
     Config, FilesEvent, Manager, PostsEvent, User,
 };
 use chrono::DateTime;
 use file::PatreonFileMeta;
 use futures::{future::join_all, try_join};
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use plyne::{Input, Output};
 use post_archiver::{
     importer::{post::UnsyncPost, UnsyncCollection, UnsyncFileMeta, UnsyncTag},
@@ -41,7 +42,7 @@ pub fn filter_posts(
         .into_iter()
         .filter(|post| config.filter_post(post))
         .filter(|post| {
-            if config.force() {
+            if config.strategy() == Strategy::Force {
                 return true;
             }
 
@@ -60,27 +61,66 @@ pub fn filter_posts(
 }
 
 pub async fn list_posts(
-    mut campaign_pipeline: Output<String>,
+    mut campaign_pipeline: Output<Member>,
     posts_pipeline: Input<PostsEvent>,
     files_pipeline: Input<FilesEvent>,
     user: &User,
     config: &Config,
     client: &PatreonClient,
     manager: &Manager,
+    context: &Context,
     pb: &ProgressSet,
 ) {
-    while let Some(campaign) = campaign_pipeline.recv().await {
-        info!("Loading posts of campaign {campaign}");
+    while let Some(member) = campaign_pipeline.recv().await {
+        let campaign_id = member.campaign.id.clone();
+        let cents = member.cents();
 
-        let mut next_url = Some(client.get_posts_url(user, &campaign));
+        info!("Loading posts of campaign {campaign_id}");
+
+        let mut campaign_record = context.campaigns.entry(campaign_id.clone()).or_default();
+
+        let last_published = campaign_record
+            .last_published(cents)
+            .filter(|_| config.strategy() == Strategy::Increment);
+
+        let mut next_url = Some(client.get_posts_url(user, &campaign_id));
+        let mut max_timestamp = 0i64;
+        let mut stop = false;
+        let mut total = 0usize;
+
+        let manager_guard = manager.lock().await;
         while let Some(url) = next_url.take() {
             let Ok((posts, next)) = client.get_posts(&url).await else {
-                error!("Failed to load posts of campaign {campaign}");
+                error!("Failed to load posts of campaign {campaign_id}");
                 break;
             };
-            next_url = next;
 
-            let posts = filter_posts(config, &*manager.lock().await, posts);
+            let posts: Vec<_> = posts
+                .into_iter()
+                .filter_map(|post| {
+                    let published_timestamp = DateTime::parse_from_rfc3339(&post.published_at)
+                        .unwrap()
+                        .timestamp();
+                    max_timestamp = max_timestamp.max(published_timestamp);
+
+                    match last_published {
+                        Some(t) if published_timestamp <= t => {
+                            stop = true;
+                            None
+                        }
+                        _ => Some(post),
+                    }
+                })
+                .collect();
+
+            if stop {
+                debug!("Skipping remaining posts for campaign {campaign_id}");
+            }
+
+            next_url = if stop { None } else { next };
+
+            let posts = filter_posts(config, &*manager_guard, posts);
+            total += posts.len();
             pb.posts.inc_length(posts.len() as u64);
 
             let posts = posts
@@ -104,6 +144,10 @@ pub async fn list_posts(
 
             join_all(posts).await;
         }
+        drop(manager_guard);
+
+        info!("Found {} posts ({campaign_id})", total);
+        campaign_record.update(max_timestamp, cents);
         pb.creators.inc(1);
     }
     info!(

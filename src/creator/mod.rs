@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub async fn list_members(
-    campaign_pipeline: Input<String>,
+    campaign_pipeline: Input<Member>,
     user: &User,
     config: &Config,
     client: &PatreonClient,
@@ -44,8 +44,7 @@ pub async fn list_members(
 
     pb.creators.inc_length(filtered as u64);
     for member in members {
-        let campaign = member.campaign.id.clone();
-        campaign_pipeline.send(campaign).unwrap();
+        campaign_pipeline.send(member).unwrap();
     }
 }
 
