@@ -1,10 +1,7 @@
-use std::collections::HashMap;
+use std::{fs::read_to_string, path::Path};
 
 use dashmap::DashMap;
-use post_archiver::manager::PostArchiverManager;
 use serde::{Deserialize, Serialize};
-
-const PATREON_ARCHIVE_FEATURE: &str = "patreon-archive";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Context {
@@ -12,21 +9,19 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn load(manager: &PostArchiverManager) -> Self {
-        let (_, extra) = manager
-            .get_feature_with_extra(PATREON_ARCHIVE_FEATURE)
-            .unwrap_or_default();
+    pub const RELATION_PATH: &'static str = "configs/patreon-archive.json";
 
-        let json = serde_json::to_value(&extra).unwrap();
-        serde_json::from_value(json).unwrap_or_default()
+    pub fn load(path: &Path) -> Self {
+        let path = path.join(Self::RELATION_PATH);
+        let json = read_to_string(path).unwrap_or_default();
+        serde_json::from_str(&json).unwrap_or_default()
     }
 
-    pub fn save(&self, manager: &PostArchiverManager) {
-        let extras = HashMap::from([(
-            "campaigns".to_string(),
-            serde_json::to_value(&self.campaigns).unwrap(),
-        )]);
-        manager.set_feature_with_extra(PATREON_ARCHIVE_FEATURE, 1, extras);
+    pub fn save(&self, path: &Path) {
+        let path = path.join(Self::RELATION_PATH);
+        std::fs::create_dir_all(path.parent().unwrap()).expect("Failed to create context folder");
+        let json = serde_json::to_string(self).expect("Failed to serialize context");
+        std::fs::write(path, json).expect("Failed to save context");
     }
 }
 

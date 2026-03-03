@@ -53,22 +53,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("");
 
     info!("Connecting to PostArchiver");
-    let manager = PostArchiverManager::open_or_create(config.output())?;
+    let output = config.output().clone();
+    let manager = PostArchiverManager::open_or_create(&output)?;
 
-    let context = context::Context::load(&manager);
+    let context = context::Context::load(&output);
     let manager = Mutex::new(manager);
 
     let progress = ProgressSet::new(&config);
 
-    let PatreonSystemContext {
-        context, manager, ..
-    } = PatreonSystem::new(manager, config, client, user, context.clone(), progress)
-        .execute()
-        .await;
+    let PatreonSystemContext { context, .. } =
+        PatreonSystem::new(manager, config, client, user, context.clone(), progress)
+            .execute()
+            .await;
 
     info!("All done!");
 
-    context.save(&*manager.lock().await);
+    context.save(&output);
     Ok(())
 }
 
