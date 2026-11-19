@@ -3,11 +3,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use jsonapi_deserialize::JsonApiDeserialize;
-use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::post::file::PatreonFileMeta;
 
 use super::Campaign;
 

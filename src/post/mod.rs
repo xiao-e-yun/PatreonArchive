@@ -1,314 +1,232 @@
 mod body;
 pub mod file;
 
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    path::PathBuf,
+use std::collections::HashSet;
+
+use chrono::DateTime;
+use file::{download_contents, PendingFile};
+use log::{error, info, warn};
+use plyne::Output;
+use post_archiver::importer::{
+    post::UnsyncPost, UnsyncAlias, UnsyncAuthor, UnsyncCollection, UnsyncContent, UnsyncFileMeta,
+    UnsyncTag,
 };
+use serde_json::json;
+use tempfile::tempdir;
+use tokio::sync::Mutex;
 
 use crate::{
-    api::PatreonClient,
-    config::{ProgressSet, Strategy},
+    api::{PatreonClient, PatreonDownloader},
+    config::{Config, IncOnDrop, ProgressSet},
     context::Context,
-    creator::sync_campaign,
-    patreon::{comment::Comment, post::Post, Member},
-    Config, FilesEvent, Manager, PostsEvent, User,
-};
-use chrono::DateTime;
-use file::PatreonFileMeta;
-use futures::{future::join_all, try_join};
-use log::{debug, error, info, trace};
-use plyne::{Input, Output};
-use post_archiver::{
-    importer::{post::UnsyncPost, UnsyncCollection, UnsyncFileMeta, UnsyncTag},
-    manager::{PostArchiverConnection, PostArchiverManager},
-    AuthorId, PlatformId,
-};
-use post_archiver_utils::Result;
-use serde_json::json;
-use tempfile::TempPath;
-use tokio::{
-    fs::{create_dir_all, File, OpenOptions},
-    io,
-    sync::oneshot,
+    patreon::{comment::Comment, post::Post},
+    Manager,
 };
 
-pub fn filter_posts(
-    config: &Config,
-    manager: &PostArchiverManager<impl PostArchiverConnection>,
-    posts: Vec<Post>,
-) -> Vec<Post> {
-    posts
-        .into_iter()
-        .filter(|post| config.filter_post(post))
-        .filter(|post| {
-            if config.strategy() == Strategy::Force {
-                return true;
-            }
-
-            let updated = DateTime::parse_from_rfc3339(&post.published_at)
-                .unwrap()
-                .to_utc();
-            manager
-                .find_post_with_updated(&post.url, &updated)
-                .unwrap_or_else(|err| {
-                    error!("Failed to check post {}: {}", &post.url, err);
-                    None
-                })
-                .is_none()
-        })
-        .collect()
+#[derive(Debug)]
+pub enum PostEvent {
+    /// A post from the campaign listing, with fresh media URLs.
+    Listed(Box<Post>),
+    /// A post that failed on an earlier run. Media URLs expire, so it is fetched again.
+    Retry { campaign: String, id: String },
 }
 
-pub async fn list_posts(
-    mut campaign_pipeline: Output<Member>,
-    posts_pipeline: Input<PostsEvent>,
-    files_pipeline: Input<FilesEvent>,
-    user: &User,
-    config: &Config,
+impl PostEvent {
+    fn id(&self) -> &str {
+        match self {
+            PostEvent::Listed(post) => &post.id,
+            PostEvent::Retry { id, .. } => id,
+        }
+    }
+
+    fn campaign(&self) -> &str {
+        match self {
+            PostEvent::Listed(post) => &post.campaign.id,
+            PostEvent::Retry { campaign, .. } => campaign,
+        }
+    }
+}
+
+/// A post that failed to import: (campaign_id, post_id).
+type FailedPost = (String, String);
+
+pub async fn posts(
+    mut posts_pipeline: Output<PostEvent>,
     client: &PatreonClient,
+    config: &Config,
     manager: &Manager,
-    context: &Context,
-    pb: &ProgressSet,
+    context: &Mutex<Context>,
+    progress: &ProgressSet,
 ) {
-    while let Some(member) = campaign_pipeline.recv().await {
-        let campaign_id = member.campaign.id.clone();
-        let cents = member.cents();
+    let tasks: TaskSet = TaskSet::new("posts").limit(4);
+    let downloader = PatreonDownloader::new(config, progress.files.clone());
 
-        info!("Loading posts of campaign {campaign_id}");
+    // A retried post can also come back in the listing.
+    let mut seen = HashSet::new();
 
-        let mut campaign_record = context.campaigns.entry(campaign_id.clone()).or_default();
-
-        let last_published = campaign_record
-            .last_published(cents)
-            .filter(|_| config.strategy() == Strategy::Increment);
-
-        let mut next_url = Some(client.get_posts_url(user, &campaign_id));
-        let mut max_timestamp = 0i64;
-        let mut stop = false;
-        let mut total = 0usize;
-
-        let manager_guard = manager.lock().await;
-        while let Some(url) = next_url.take() {
-            let Ok((posts, next)) = client.get_posts(&url).await else {
-                error!("Failed to load posts of campaign {campaign_id}");
-                break;
-            };
-
-            let posts: Vec<_> = posts
-                .into_iter()
-                .filter_map(|post| {
-                    let published_timestamp = DateTime::parse_from_rfc3339(&post.published_at)
-                        .unwrap()
-                        .timestamp();
-                    max_timestamp = max_timestamp.max(published_timestamp);
-
-                    match last_published {
-                        Some(t) if published_timestamp <= t => {
-                            stop = true;
-                            None
-                        }
-                        _ => Some(post),
-                    }
-                })
-                .collect();
-
-            if stop {
-                debug!("Skipping remaining posts for campaign {campaign_id}");
-            }
-
-            next_url = if stop { None } else { next };
-
-            let posts = filter_posts(config, &*manager_guard, posts);
-            total += posts.len();
-            pb.posts.inc_length(posts.len() as u64);
-
-            let posts = posts
-                .into_iter()
-                .map(async |post| {
-                    let comments = match post.comment_count {
-                        0 => vec![],
-                        _ => client.get_comments(&post.id).await.unwrap_or_else(|err| {
-                            error!("Failed to get comments of post {}: {}", &post.id, err);
-                            vec![]
-                        }),
-                    };
-
-                    let (tx, rx) = oneshot::channel();
-
-                    let contents = post.files();
-                    files_pipeline.send((contents, tx)).unwrap();
-                    posts_pipeline.send((post, comments, rx)).unwrap();
-                })
-                .collect::<Vec<_>>();
-
-            join_all(posts).await;
+    while let Some(event) = posts_pipeline.recv().await {
+        let guard = IncOnDrop(progress.posts.clone());
+        if !seen.insert(event.id().to_string()) {
+            continue;
         }
-        drop(manager_guard);
 
-        info!("Found {} posts ({campaign_id})", total);
-        campaign_record.update(max_timestamp, cents);
-        pb.creators.inc(1);
+        tasks
+            .spawn(post_task(
+                event,
+                client.clone(),
+                downloader.clone(),
+                manager.clone(),
+                guard,
+            ))
+            .await;
     }
-    info!(
-        "Creators processed: {}/{} creators",
-        pb.creators.position(),
-        pb.creators.length().unwrap_or_default()
-    );
+
+    let results = tasks.join_all().await;
+    progress.posts.finish();
+    progress.files.finish();
+
+    // `creator_posts` has already finished (it owns a pipeline sender), so this can't race it.
+    let mut ctx = context.lock().await;
+    for (campaign, id) in results.into_iter().filter_map(Result::err) {
+        ctx.campaigns.entry(campaign).or_default().failed.insert(id);
+    }
 }
 
-pub async fn sync_posts(
-    mut posts_pipeline: Output<PostsEvent>,
-    manager: &Manager,
-    pb: &ProgressSet,
-) {
-    let mut authors = HashMap::new();
-    'post: while let Some((post, comments, rx)) = posts_pipeline.recv().await {
-        let mut manager = manager.lock().await;
+type TaskSet = post_archiver_utils::TaskSet<(), FailedPost>;
 
-        let platform = manager.import_platform("patreon".to_string()).unwrap();
+async fn post_task(
+    event: PostEvent,
+    client: PatreonClient,
+    downloader: PatreonDownloader,
+    manager: Manager,
+    _guard: IncOnDrop,
+) -> Result<(), FailedPost> {
+    let failed = (event.campaign().to_string(), event.id().to_string());
 
-        let campaign = post.campaign.clone();
-        let campaign_id = campaign.id.clone();
-        let author = match authors.entry(campaign_id) {
-            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
-            Entry::Vacant(vacant_entry) => match sync_campaign(&manager, platform, &campaign) {
-                Ok(author) => *vacant_entry.insert(author),
-                Err(e) => {
-                    error!("Failed to sync creator for post: {} {:?}", post.id, e);
-                    continue;
-                }
-            },
-        };
+    let post = match event {
+        PostEvent::Listed(post) => *post,
+        PostEvent::Retry { id, .. } => match client.get_post(&id).await {
+            Ok(post) => post,
+            Err(e) => {
+                error!("Failed to fetch post {id}: {e}");
+                return Err(failed);
+            }
+        },
+    };
 
-        let tx = manager.transaction().unwrap();
-
-        let title = post.title.clone();
-        let post = conversion_post(platform, author, post, comments);
-        let source = post.source.clone();
-
-        let Ok((_, _, _, files)) = tx.import_post(post, true) else {
-            error!("Failed to import post: {source}");
-            continue;
-        };
-
-        let Ok(mut file_map) = rx.await else {
-            error!("Failed to receive file map for post: {source}");
-            continue;
-        };
-
-        let mut create_dir = true;
-        for (path, url) in files {
-            if let Err(e) = save_file(&mut file_map, &path, &url, create_dir).await {
-                error!("Failed to save file {}: {}", path.display(), e);
-                error!("Aborting post import due to file errors: {source}");
-                continue 'post;
-            };
-            create_dir = false;
-        }
-
-        tx.commit().unwrap();
-        info!("Post imported: {title}");
-
-        pb.posts.inc(1);
+    if !post.current_user_can_view {
+        // e.g. a retried post after the pledge went down; a later pledge increase rescans it.
+        warn!("Post {} is no longer viewable, dropping it", post.url);
+        return Ok(());
     }
 
-    info!(
-        "Posts imported: {}/{} posts",
-        pb.posts.position(),
-        pb.posts.length().unwrap_or_default()
-    );
+    let comments = match post.comment_count {
+        0 => vec![],
+        _ => client.get_comments(&post.id).await.unwrap_or_else(|e| {
+            error!("Failed to get comments of post {}: {e}", post.id);
+            vec![]
+        }),
+    };
 
-    fn conversion_post(
-        platform: PlatformId,
-        author: AuthorId,
-        post: Post,
-        comments: Vec<Comment>,
-    ) -> UnsyncPost<String> {
-        let mut tags = vec![];
-        if post.is_free() {
-            tags.push(UnsyncTag {
-                name: "free".to_string(),
-                platform: None,
-            });
+    let Ok(temp_dir) = tempdir() else {
+        error!("Failed to create temporary directory for post {}", post.id);
+        return Err(failed);
+    };
+
+    let thumb = post.image.as_ref().map(|image| {
+        let mut thumb = PendingFile::from_url(image.url.clone());
+        thumb.extra.insert("width".to_string(), json!(image.width));
+        thumb.extra.insert("height".to_string(), json!(image.height));
+        thumb
+    });
+
+    let (contents, thumb) =
+        match download_contents(post.contents(), thumb, &downloader, temp_dir.path()).await {
+            Ok(downloaded) => downloaded,
+            Err(e) => {
+                error!("Failed to download files of post {}: {e}", post.url);
+                return Err(failed);
+            }
+        };
+
+    let title = post.title.clone();
+    let source = post.url.clone();
+    let unsync = conversion_post(post, contents, thumb, comments);
+
+    // `import_post` copies files with blocking I/O; keep it off the async runtime.
+    // `temp_dir` must outlive the import, since the files are copied from it.
+    let result = tokio::task::spawn_blocking(move || {
+        let result = manager.blocking_lock().importer().import_post(unsync);
+        drop(temp_dir);
+        result
+    })
+    .await;
+
+    match result {
+        Ok(Ok(_)) => {
+            info!("Post imported: {title}");
+            Ok(())
         }
+        Ok(Err(e)) => {
+            error!("Failed to import post {source}: {e}");
+            Err(failed)
+        }
+        Err(e) => {
+            error!("Import task panicked for {source}: {e}");
+            Err(failed)
+        }
+    }
+}
 
-        let collections = post
-            .user_defined_tags
-            .iter()
-            .map(|tag| {
-                UnsyncCollection::new(
-                    tag.value.clone(),
-                    format!(
-                        "{}/posts?filters[tag]={}",
-                        post.campaign.url,
-                        urlencoding::encode(&tag.value)
-                    ),
-                )
-            })
-            .collect();
-
-        let thumb = post.image.clone().map(|image| {
-            let mut meta = if image.url.starts_with("https://www.patreon.com/media-u/v3/") {
-                // default thumb url
-                UnsyncFileMeta::new("thumb.jpg".to_string(), "image/jpeg".to_string(), image.url)
-            } else {
-                UnsyncFileMeta::from_url(image.url)
-            };
-            meta.extra = HashMap::from([
-                ("width".to_string(), json!(image.width)),
-                ("height".to_string(), json!(image.height)),
-            ]);
-            meta
+fn conversion_post(
+    post: Post,
+    contents: Vec<UnsyncContent>,
+    thumb: Option<UnsyncFileMeta>,
+    comments: Vec<Comment>,
+) -> UnsyncPost {
+    let mut tags = vec![];
+    if post.is_free() {
+        tags.push(UnsyncTag {
+            name: "free".to_string(),
+            platform: None,
         });
-
-        let content = post.contents();
-
-        let comments = comments.into_iter().map(|c| c.into()).collect();
-
-        let published = DateTime::parse_from_rfc3339(&post.published_at)
-            .unwrap()
-            .to_utc();
-
-        UnsyncPost::new(platform, post.url, post.title, content)
-            .published(published)
-            .updated(published)
-            .authors(vec![author])
-            .tags(tags)
-            .thumb(thumb)
-            .comments(comments)
-            .collections(collections)
     }
 
-    async fn save_file(
-        file_map: &mut HashMap<String, TempPath>,
-        path: &PathBuf,
-        url: &str,
-        create_dir: bool,
-    ) -> Result<()> {
-        if create_dir {
-            let path = path.parent().unwrap();
-            create_dir_all(path).await?;
-        }
+    let collections = post
+        .user_defined_tags
+        .iter()
+        .map(|tag| {
+            UnsyncCollection::new(
+                tag.value.clone(),
+                format!(
+                    "{}/posts?filters[tag]={}",
+                    post.campaign.url,
+                    urlencoding::encode(&tag.value)
+                ),
+            )
+        })
+        .collect();
 
-        let temp = file_map.remove(url).ok_or(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("File not found in map: {url}"),
-        ))?;
+    let author = UnsyncAuthor::new(post.campaign.name.clone()).aliases(vec![UnsyncAlias::new(
+        "patreon".to_string(),
+        post.campaign.id.clone(),
+    )
+    .link(post.campaign.url.clone())]);
 
-        let mut open_options = OpenOptions::new();
-        let (mut src, mut dst) = try_join!(
-            File::open(&temp),
-            open_options
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&path)
-        )?;
+    let comments = comments.into_iter().map(|c| c.into()).collect();
 
-        io::copy(&mut src, &mut dst).await?;
-        trace!("File saved: {url} -> {}", path.display());
+    let published = DateTime::parse_from_rfc3339(&post.published_at)
+        .map(|t| t.to_utc())
+        .ok();
 
-        Ok(())
+    let mut unsync = UnsyncPost::new("patreon".to_string(), post.url, post.title, contents)
+        .authors(vec![author])
+        .tags(tags)
+        .thumb(thumb)
+        .comments(comments)
+        .collections(collections);
+    if let Some(published) = published {
+        unsync = unsync.published(published).updated(published);
     }
+    unsync
 }

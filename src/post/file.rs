@@ -1,85 +1,54 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use futures::future::try_join_all;
-use log::{debug, error};
 use mime_guess::MimeGuess;
-use plyne::Output;
-use post_archiver::importer::file_meta::UnsyncFileMeta;
-use serde_json::json;
-use tokio::{sync::Semaphore, task::JoinSet};
+use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
+use post_archiver_utils::Result;
+use serde_json::{json, Value};
 
-use crate::{api::PatreonClient, config::ProgressSet, patreon::post::Media, Config, FilesEvent};
+use crate::{api::PatreonDownloader, patreon::post::Media};
 
-pub async fn download_files(
-    mut files_pipeline: Output<FilesEvent>,
-    config: &Config,
-    pb: &ProgressSet,
-) {
-    let mut tasks = JoinSet::new();
-    let client = PatreonClient::new(config);
+/// Default thumbnails have no meaningful filename in their URL.
+const DEFAULT_THUMB_PREFIX: &str = "https://www.patreon.com/media-u/v3/";
 
-    let semaphore = Arc::new(Semaphore::new(3));
-    while let Some((urls, tx)) = files_pipeline.recv().await {
-        if urls.is_empty() {
-            tx.send(Default::default()).unwrap();
-            continue;
-        }
-        pb.files.inc_length(urls.len() as u64);
-
-        let client = client.clone();
-        let semaphore = semaphore.clone();
-        let file_pb = pb.files.clone();
-        tasks.spawn(async move {
-            let _permit = semaphore.acquire().await.unwrap();
-            match try_join_all(urls.into_iter().map(|url| async {
-                let download_path = client.download(&url);
-                let result = download_path.await.map(|path| (url, path));
-                file_pb.inc(1);
-                result.inspect_err(|e| error!("Failed to download file: {e}"))
-            }))
-            .await
-            {
-                Ok(urls) => tx.send(urls.into_iter().collect()).unwrap(),
-                Err(e) => error!("Failed to receive file URLs: {e}"),
-            }
-        });
-    }
-
-    tasks.join_all().await;
-
-    debug!(
-        "Files processed: {}/{} files",
-        pb.files.position(),
-        pb.files.length().unwrap_or_default()
-    );
+/// A file to download, with the metadata it will be imported under.
+#[derive(Debug, Clone)]
+pub struct PendingFile {
+    pub filename: String,
+    pub mime: String,
+    pub extra: HashMap<String, Value>,
+    pub url: String,
 }
 
-pub trait PatreonFileMeta
-where
-    Self: Sized,
-{
-    fn from_url(url: String) -> Self;
-    fn from_media(image: Media) -> Self;
-    fn from_audio_thumb(image: Media, filename: String) -> Self;
+#[derive(Debug, Clone)]
+pub enum PendingContent {
+    Text(String),
+    File(PendingFile),
 }
 
-impl PatreonFileMeta for UnsyncFileMeta<String> {
-    fn from_url(url: String) -> Self {
-        if url.starts_with("https://www.patreon.com/media-u/v3/") {
-            return UnsyncFileMeta::new("thumb.jpg".to_string(), "image/jpeg".to_string(), url);
+impl PendingFile {
+    pub fn from_url(url: String) -> Self {
+        if url.starts_with(DEFAULT_THUMB_PREFIX) {
+            return Self::new("thumb.jpg".to_string(), "image/jpeg".to_string(), url);
         };
 
         let mut filename = url.split('/').next_back().unwrap().to_string();
-        filename.truncate(filename.find('?').unwrap_or(url.len()));
+        if let Some(query) = filename.find('?') {
+            filename.truncate(query);
+        }
 
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
 
-        UnsyncFileMeta::new(filename, mime, url)
+        Self::new(filename, mime, url)
     }
-    fn from_media(media: Media) -> Self {
-        let mut filename = media.file_name.unwrap_or_else(|| {
+
+    pub fn from_media(media: Media) -> Self {
+        let mut filename = media.file_name.clone().unwrap_or_else(|| {
             media
                 .download_url
                 .split('/')
@@ -88,7 +57,7 @@ impl PatreonFileMeta for UnsyncFileMeta<String> {
                 .to_string()
         });
 
-        if filename.starts_with("https://www.patreon.com/media-u/v3/") {
+        if filename.starts_with(DEFAULT_THUMB_PREFIX) {
             filename = "thumb.jpg".to_string();
         };
 
@@ -96,44 +65,90 @@ impl PatreonFileMeta for UnsyncFileMeta<String> {
             .first_or_octet_stream()
             .to_string();
 
-        let mut extra = HashMap::new();
-
-        let dimensions = &media.metadata.dimensions;
-        if let Some(dimensions) = dimensions {
-            extra.insert("width".to_string(), json!(dimensions.w));
-            extra.insert("height".to_string(), json!(dimensions.h));
-        }
-
-        let duration_s = &media.metadata.duration_s;
-        if let Some(duration_s) = duration_s {
+        let mut extra = media_dimensions(&media);
+        if let Some(duration_s) = &media.metadata.duration_s {
             extra.insert("duration_s".to_string(), json!(duration_s));
         }
 
-        UnsyncFileMeta {
+        Self {
             filename,
             mime,
             extra,
-            data: media.download_url,
+            url: media.download_url,
         }
     }
-    fn from_audio_thumb(media: Media, filename: String) -> Self {
+
+    pub fn from_audio_thumb(media: Media, filename: String) -> Self {
         let mime = MimeGuess::from_path(&filename)
             .first_or_octet_stream()
             .to_string();
 
-        let mut extra = HashMap::new();
-
-        let dimensions = &media.metadata.dimensions;
-        if let Some(dimensions) = dimensions {
-            extra.insert("width".to_string(), json!(dimensions.w));
-            extra.insert("height".to_string(), json!(dimensions.h));
-        }
-
-        UnsyncFileMeta {
+        Self {
             filename,
             mime,
-            extra,
-            data: media.download_url,
+            extra: media_dimensions(&media),
+            url: media.download_url,
         }
     }
+
+    fn new(filename: String, mime: String, url: String) -> Self {
+        Self {
+            filename,
+            mime,
+            extra: HashMap::new(),
+            url,
+        }
+    }
+}
+
+fn media_dimensions(media: &Media) -> HashMap<String, Value> {
+    let mut extra = HashMap::new();
+    if let Some(dimensions) = &media.metadata.dimensions {
+        extra.insert("width".to_string(), json!(dimensions.w));
+        extra.insert("height".to_string(), json!(dimensions.h));
+    }
+    extra
+}
+
+/// Download every pending file once into `with_in` (the same URL can appear twice,
+/// e.g. as thumbnail and content), then turn pending contents into importable ones.
+pub async fn download_contents(
+    contents: Vec<PendingContent>,
+    thumb: Option<PendingFile>,
+    downloader: &PatreonDownloader,
+    with_in: &Path,
+) -> Result<(Vec<UnsyncContent>, Option<UnsyncFileMeta>)> {
+    let mut urls: Vec<&str> = contents
+        .iter()
+        .filter_map(|c| match c {
+            PendingContent::File(f) => Some(f.url.as_str()),
+            PendingContent::Text(_) => None,
+        })
+        .chain(thumb.iter().map(|f| f.url.as_str()))
+        .collect();
+    urls.sort_unstable();
+    urls.dedup();
+
+    let downloaded: HashMap<String, PathBuf> = try_join_all(urls.into_iter().map(|url| async move {
+        let path = downloader.download(with_in, url).await?;
+        Ok::<_, post_archiver_utils::Error>((url.to_string(), path))
+    }))
+    .await?
+    .into_iter()
+    .collect();
+
+    let into_meta = |file: PendingFile| {
+        let source = downloaded[&file.url].clone();
+        UnsyncFileMeta::new(file.filename, file.mime, source).extra(file.extra)
+    };
+
+    let contents = contents
+        .into_iter()
+        .map(|c| match c {
+            PendingContent::Text(text) => UnsyncContent::Text(text),
+            PendingContent::File(file) => UnsyncContent::File(into_meta(file)),
+        })
+        .collect();
+
+    Ok((contents, thumb.map(into_meta)))
 }

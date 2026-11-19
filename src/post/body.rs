@@ -1,11 +1,13 @@
 use htmd::{Element, HtmlToMarkdown};
 use log::error;
-use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
 
-use crate::{patreon::post::Post, post::file::PatreonFileMeta};
+use crate::{
+    patreon::post::Post,
+    post::file::{PendingContent, PendingFile},
+};
 
 impl Post {
-    pub fn contents(&self) -> Vec<UnsyncContent<String>> {
+    pub fn contents(&self) -> Vec<PendingContent> {
         let img_handler = move |_: Element| -> Option<String> { None }; // skip images
 
         let htmd_converter = HtmlToMarkdown::builder()
@@ -13,7 +15,7 @@ impl Post {
             .build();
 
         let markdown = self.content.as_ref().map(|html| {
-            UnsyncContent::Text(
+            PendingContent::Text(
                 htmd_converter
                     .convert(html)
                     .inspect_err(|err| error!("Failed to convert HTML to Markdown: {err}"))
@@ -46,8 +48,8 @@ impl Post {
             let file_name = &audio.file_name;
             audio_file_name = Some(file_name.as_ref().unwrap().rsplit_once('.').unwrap().0);
 
-            let file = UnsyncFileMeta::from_media(audio.clone());
-            contents.push(UnsyncContent::File(file));
+            let file = PendingFile::from_media(audio.clone());
+            contents.push(PendingContent::File(file));
         }
 
         for media in filtered_media.into_iter() {
@@ -69,14 +71,14 @@ impl Post {
                     .unwrap()
                     .1
                     .to_string();
-                let file = UnsyncFileMeta::from_audio_thumb(
+                let file = PendingFile::from_audio_thumb(
                     media,
                     format!("{}.thumb.{}", audio_file_name.unwrap(), ext),
                 );
-                contents.push(UnsyncContent::File(file));
+                contents.push(PendingContent::File(file));
             } else {
-                let file = UnsyncFileMeta::from_media(media);
-                contents.push(UnsyncContent::File(file));
+                let file = PendingFile::from_media(media);
+                contents.push(PendingContent::File(file));
             }
         }
 
@@ -120,7 +122,7 @@ impl Post {
                 ));
             }
 
-            contents.push(UnsyncContent::Text(table.join("\n")));
+            contents.push(PendingContent::Text(table.join("\n")));
         }
 
         if let Some(content) = markdown {
@@ -128,16 +130,5 @@ impl Post {
         }
 
         contents
-    }
-
-    pub fn files(&self) -> Vec<String> {
-        self.contents()
-            .into_iter()
-            .filter_map(|content| match content {
-                UnsyncContent::File(file) => Some(file.data),
-                _ => None,
-            })
-            .chain(self.image.iter().map(|e| e.url.clone()))
-            .collect()
     }
 }

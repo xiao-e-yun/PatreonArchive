@@ -8,39 +8,32 @@ mod post;
 
 mod patreon;
 
-use std::{collections::HashMap, error::Error};
+use std::{error::Error, sync::Arc};
 
 use api::PatreonClient;
 use config::{Config, ProgressSet};
 use context::Context;
-use creator::list_members;
-use log::{info, warn};
-use patreon::{comment::Comment, post::Post, Member, User};
+use creator::{creator_posts, list_members};
+use log::info;
+use patreon::{Member, User};
 use plyne::define_tasks;
-use post::{file::download_files, list_posts, sync_posts};
+use post::{posts, PostEvent};
 use post_archiver::{manager::PostArchiverManager, utils::VERSION};
-use post_archiver_utils::display_metadata;
-use tempfile::TempPath;
-use tokio::sync::{oneshot, Mutex};
+use post_archiver_utils::{display_metadata, setup_database};
+use tokio::sync::Mutex;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = config::Config::parse();
     config.init_logger();
 
-    display_metadata(
-        "Patreon Archive",
-        &[
-            ("PostArchiver", VERSION),
-            ("Strategy", config.strategy().as_str()),
-            ("Output", config.output().to_str().unwrap()),
-        ],
-    );
-
-    if !config.output().exists() {
-        warn!("Creating output folder");
-        std::fs::create_dir_all(config.output())?;
-    }
+    display_metadata!("Patreon Archive" {
+        "Version": format!("v{}", env!("CARGO_PKG_VERSION")),
+        "PostArchiver Version": VERSION,
+        "Strategy": config.strategy(),
+        "Limit": format!("{}/min", config.limit()),
+        "Output": config.output().display(),
+    });
 
     let client = PatreonClient::new(&config);
 
@@ -52,54 +45,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("==================================");
     info!("");
 
-    info!("Connecting to PostArchiver");
     let output = config.output().clone();
-    let manager = PostArchiverManager::open_or_create(&output)?;
+    let manager = Arc::new(Mutex::new(setup_database(&output)?));
+    let context = Mutex::new(Context::load(&output));
+    let progress = ProgressSet::new(&config.multi);
 
-    let context = context::Context::load(&output);
-    let manager = Mutex::new(manager);
-
-    let progress = ProgressSet::new(&config);
-
-    let PatreonSystemContext { context, .. } =
-        PatreonSystem::new(manager, config, client, user, context.clone(), progress)
-            .execute()
-            .await;
+    let system = PatreonSystem::new(manager, config, client, user, context, progress);
+    let PatreonSystemContext { context, .. } = system.execute().await;
 
     info!("All done!");
 
-    context.save(&output);
+    context.into_inner().save(&output);
     Ok(())
 }
 
-pub type PostsEvent = (
-    Post,
-    Vec<Comment>,
-    oneshot::Receiver<HashMap<String, TempPath>>,
-);
-pub type FilesEvent = (Vec<String>, oneshot::Sender<HashMap<String, TempPath>>);
-
-pub type Manager = Mutex<PostArchiverManager>;
+pub type Manager = Arc<Mutex<PostArchiverManager>>;
 
 define_tasks! {
     PatreonSystem
     pipelines {
         campaign_pipeline: Member,
-        posts_pipeline: PostsEvent,
-        files_pipeline: FilesEvent,
+        posts_pipeline: PostEvent,
     }
     vars {
         manager: Manager,
         config: Config,
         client: PatreonClient,
         user: User,
-        context: Context,
-        progress_set: ProgressSet,
+        context: Mutex<Context>,
+        progress: ProgressSet,
     }
     tasks {
         list_members,
-        list_posts,
-        download_files,
-        sync_posts,
+        creator_posts,
+        posts,
     }
 }

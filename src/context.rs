@@ -1,11 +1,16 @@
-use std::{fs::read_to_string, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::read_to_string,
+    path::Path,
+};
 
-use dashmap::DashMap;
+use log::warn;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Context {
-    pub campaigns: DashMap<String, CachedCampaign>,
+    /// campaign_id: CachedCampaign
+    pub campaigns: HashMap<String, CachedCampaign>,
 }
 
 impl Context {
@@ -13,8 +18,13 @@ impl Context {
 
     pub fn load(path: &Path) -> Self {
         let path = path.join(Self::RELATION_PATH);
-        let json = read_to_string(path).unwrap_or_default();
-        serde_json::from_str(&json).unwrap_or_default()
+        let Ok(json) = read_to_string(&path) else {
+            return Self::default();
+        };
+        serde_json::from_str(&json).unwrap_or_else(|e| {
+            warn!("Failed to parse {}, starting fresh: {e}", path.display());
+            Self::default()
+        })
     }
 
     pub fn save(&self, path: &Path) {
@@ -29,9 +39,14 @@ impl Context {
 pub struct CachedCampaign {
     pub published: i64,
     pub cents: u32,
+    /// Post IDs that failed to import; retried on every run.
+    #[serde(default)]
+    pub failed: HashSet<String>,
 }
 
 impl CachedCampaign {
+    /// Only trust `published` while the pledge hasn't gone up: a higher pledge may unlock
+    /// older posts, so the whole campaign has to be rescanned.
     pub fn last_published(&self, cents: u32) -> Option<i64> {
         let cents_unchanged = cents <= self.cents;
         cents_unchanged.then_some(self.published)

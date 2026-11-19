@@ -1,25 +1,25 @@
 pub mod save_type;
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use dotenv::dotenv;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar};
 use indicatif_log_bridge::LogWrapper;
-use serde::{Deserialize, Serialize};
-use std::{ops::Deref, path::PathBuf};
+use post_archiver_utils::{define_progress, Strategy};
+use std::{num::NonZeroU32, path::PathBuf};
 
 use crate::patreon::{post::Post, Member};
 
-#[derive(Debug, Clone, Parser, Default)]
+#[derive(Debug, Clone, Parser)]
 pub struct Config {
     /// Your `session_id` cookie
-    #[clap(env = "SESSION")]
+    #[clap(env = "SESSION", hide_env_values = true)]
     session: String,
     /// Which you path want to save
     #[arg(default_value = "./archive", env = "OUTPUT")]
     output: PathBuf,
-    /// Archiving strategy
-    #[arg(long, default_value = "increment")]
+    /// Archiving strategy (`full` re-archives existing posts)
+    #[arg(long, default_value_t)]
     strategy: Strategy,
     /// Whitelist of creator IDs
     #[arg(short, long, num_args = 0..)]
@@ -27,9 +27,9 @@ pub struct Config {
     /// Blacklist of creator IDs
     #[arg(short, long, num_args = 0..)]
     blacklist: Vec<String>,
-    /// Limit download concurrency
-    #[arg(long, default_value = "20")]
-    limit: usize,
+    /// Limit API requests per minute
+    #[arg(long, default_value = "60")]
+    limit: NonZeroU32,
     /// Skip free post
     #[arg(long, name = "skip-free")]
     skip_free: bool,
@@ -67,7 +67,7 @@ impl Config {
     pub const fn output(&self) -> &PathBuf {
         &self.output
     }
-    pub const fn limit(&self) -> usize {
+    pub const fn limit(&self) -> NonZeroU32 {
         self.limit
     }
 
@@ -101,72 +101,19 @@ impl Config {
     pub const fn strategy(&self) -> Strategy {
         self.strategy
     }
-
-    pub fn progress(&self, prefix: &'static str) -> Progress {
-        Progress::new(&self.multi, prefix)
-    }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, Hash, ValueEnum, PartialEq, Eq, Default)]
-pub enum Strategy {
-    #[default]
-    Increment,
-    Full,
-    Force,
-}
+define_progress!(ProgressSet [
+    creators,
+    posts,
+    files
+]);
 
-impl Strategy {
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Increment => "increment",
-            Self::Full => "full",
-            Self::Force => "force",
-        }
-    }
-}
+/// Increments the progress bar by one when dropped, so early returns are still counted.
+pub struct IncOnDrop(pub ProgressBar);
 
-#[derive(Debug, Clone)]
-pub struct Progress(ProgressBar);
-
-impl Progress {
-    pub fn new(multi: &MultiProgress, prefix: &'static str) -> Self {
-        Self(
-            multi.add(
-                ProgressBar::new(0)
-                    .with_style(Self::style())
-                    .with_prefix(format!("[{prefix}]")),
-            ),
-        )
-    }
-
-    fn style() -> ProgressStyle {
-        ProgressStyle::with_template("{prefix:.bold.dim} {wide_bar:.cyan/blue} {pos:>3}/{len:3}")
-            .unwrap()
-            .progress_chars("#>-")
-    }
-}
-
-impl Deref for Progress {
-    type Target = ProgressBar;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProgressSet {
-    pub creators: Progress,
-    pub posts: Progress,
-    pub files: Progress,
-}
-
-impl ProgressSet {
-    pub fn new(config: &Config) -> Self {
-        Self {
-            creators: config.progress("creators"),
-            posts: config.progress("posts"),
-            files: config.progress("files"),
-        }
+impl Drop for IncOnDrop {
+    fn drop(&mut self) {
+        self.0.inc(1);
     }
 }
