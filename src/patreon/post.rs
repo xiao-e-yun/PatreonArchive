@@ -66,15 +66,15 @@ pub struct Image {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Embed {
-    description: Option<String>,
-    html: Option<String>,
-    linked_object_id: Option<String>,
-    linked_object_type: Option<String>,
-    product_variant_id: Option<u32>,
-    provider: Option<String>,
-    provider_url: Option<String>,
-    subject: Option<String>,
-    url: Option<String>,
+    pub description: Option<String>,
+    pub html: Option<String>,
+    pub linked_object_id: Option<String>,
+    pub linked_object_type: Option<String>,
+    pub product_variant_id: Option<u32>,
+    pub provider: Option<String>,
+    pub provider_url: Option<String>,
+    pub subject: Option<String>,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

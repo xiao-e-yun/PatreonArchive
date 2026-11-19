@@ -4,6 +4,7 @@ use std::{
 };
 
 use futures::future::try_join_all;
+use log::warn;
 use mime_guess::MimeGuess;
 use post_archiver::importer::{UnsyncContent, UnsyncFileMeta};
 use post_archiver_utils::Result;
@@ -130,25 +131,33 @@ pub async fn download_contents(
     urls.dedup();
 
     let downloaded: HashMap<String, PathBuf> = try_join_all(urls.into_iter().map(|url| async move {
-        let path = downloader.download(with_in, url).await?;
-        Ok::<_, post_archiver_utils::Error>((url.to_string(), path))
+        match downloader.download(with_in, url).await {
+            Ok(path) => Ok(Some((url.to_string(), path))),
+            // Placeholder images of embed posts often 404; don't fail the whole post for them.
+            Err(e) if url.starts_with(DEFAULT_THUMB_PREFIX) => {
+                warn!("Skipping placeholder image {url}: {e}");
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
     }))
     .await?
     .into_iter()
+    .flatten()
     .collect();
 
     let into_meta = |file: PendingFile| {
-        let source = downloaded[&file.url].clone();
-        UnsyncFileMeta::new(file.filename, file.mime, source).extra(file.extra)
+        let source = downloaded.get(&file.url)?.clone();
+        Some(UnsyncFileMeta::new(file.filename, file.mime, source).extra(file.extra))
     };
 
     let contents = contents
         .into_iter()
-        .map(|c| match c {
-            PendingContent::Text(text) => UnsyncContent::Text(text),
-            PendingContent::File(file) => UnsyncContent::File(into_meta(file)),
+        .filter_map(|c| match c {
+            PendingContent::Text(text) => Some(UnsyncContent::Text(text)),
+            PendingContent::File(file) => into_meta(file).map(UnsyncContent::File),
         })
         .collect();
 
-    Ok((contents, thumb.map(into_meta)))
+    Ok((contents, thumb.and_then(into_meta)))
 }

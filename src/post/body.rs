@@ -26,6 +26,21 @@ impl Post {
 
         let mut contents = Vec::new();
 
+        // Video/link embeds (e.g. YouTube) only exist as metadata; keep the link.
+        if let Some((embed, url)) = self
+            .embed
+            .as_ref()
+            .and_then(|embed| Some((embed, embed.url.as_ref()?)))
+        {
+            let label = match (&embed.provider, &embed.subject) {
+                (Some(provider), Some(subject)) => format!("{provider}: {subject}"),
+                (Some(provider), None) => provider.clone(),
+                (None, Some(subject)) => subject.clone(),
+                (None, None) => url.clone(),
+            };
+            contents.push(PendingContent::Text(format!("[{label}]({url})")));
+        }
+
         let audio_id = self.audio.as_deref().map(|e| &e.id);
         let audio_preview_id = self.audio_preview.as_deref().map(|e| &e.id);
 
