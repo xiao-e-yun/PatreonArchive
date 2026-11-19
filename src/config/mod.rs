@@ -21,10 +21,10 @@ pub struct Config {
     /// Archiving strategy (`full` re-archives existing posts)
     #[arg(long, default_value_t)]
     strategy: Strategy,
-    /// Whitelist of creator IDs
+    /// Only archive these creators (the `name` in `patreon.com/name`)
     #[arg(short, long, num_args = 0..)]
     whitelist: Vec<String>,
-    /// Blacklist of creator IDs
+    /// Skip these creators (the `name` in `patreon.com/name`)
     #[arg(short, long, num_args = 0..)]
     blacklist: Vec<String>,
     /// Limit API requests per minute
