@@ -8,15 +8,14 @@ It is importer for patreon to PostArchiver.
 Usage: patreon-archive [OPTIONS] <SESSION> [OUTPUT]
 
 Arguments:
-  <SESSION>  Your `session_id` cookie [env: SESSION=]
+  <SESSION>  Your `session_id` cookie [env: SESSION]
   [OUTPUT]   Which you path want to save [env: OUTPUT=] [default: ./archive]
 
 Options:
-  -f, --force                       Force download
-  -o, --overwrite                   Overwrite existing files
+      --strategy <STRATEGY>         Archiving strategy (`full` re-archives existing posts) [default: increment]
   -w, --whitelist [<WHITELIST>...]  Whitelist of creator IDs
   -b, --blacklist [<BLACKLIST>...]  Blacklist of creator IDs
-      --limit <LIMIT>               Limit download concurrency [default: 5]
+      --limit <LIMIT>               Limit API requests per minute [default: 60]
       --skip-free                   Skip free post
   -v, --verbose...                  Increase logging verbosity
   -q, --quiet...                    Decrease logging verbosity
