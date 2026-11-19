@@ -15,8 +15,8 @@ pub struct Config {
     /// Your `session_id` cookie
     #[clap(env = "SESSION", hide_env_values = true)]
     session: String,
-    /// Which you path want to save
-    #[arg(default_value = "./archive", env = "OUTPUT")]
+    /// Archive directory to save into
+    #[arg(short, long, default_value = "./archive", env = "OUTPUT")]
     output: PathBuf,
     /// Archiving strategy (`full` re-archives existing posts)
     #[arg(long, default_value_t)]
